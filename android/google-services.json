@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1057709175777",
+    "project_id": "claudewearos",
+    "storage_bucket": "claudewearos.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1057709175777:android:97923deddc1ed6ac9798a0",
+        "android_client_info": {
+          "package_name": "com.automatito.claudewearos"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBMUWdzTJ2NDgAeUKyjA8xCj8uRh7sqsZQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
