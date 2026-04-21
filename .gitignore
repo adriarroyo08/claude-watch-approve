@@ -1,7 +1,27 @@
+# Python
+venv/
 __pycache__/
 *.pyc
 *.pyo
-venv/
-.env
 *.db
-firebase-credentials.json
+data/
+
+# Secrets
+.env
+server/firebase-credentials.json
+android/mobile/google-services.json
+android/wear/google-services.json
+
+# Android
+android/.gradle/
+android/build/
+android/mobile/build/
+android/wear/build/
+*.apk
+*.aab
+local.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
