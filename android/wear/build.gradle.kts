@@ -48,4 +48,5 @@ dependencies {
     // Coroutines
     implementation(libs.coroutines.android)
     implementation(libs.coroutines.play.services)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.10.1")
 }
