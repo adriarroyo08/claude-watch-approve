@@ -1,0 +1,17 @@
+[Unit]
+Description=Claude Watch Approve API
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/claude-watch-approve
+ExecStart=/home/ubuntu/claude-watch-approve/venv/bin/uvicorn server.main:app --host 127.0.0.1 --port 8400
+Environment=CLAUDE_WATCH_API_KEY=CHANGE_ME
+Environment=CLAUDE_WATCH_DB_PATH=/home/ubuntu/claude-watch-approve/data/approvals.db
+Environment=CLAUDE_WATCH_FCM_CREDENTIALS=/home/ubuntu/claude-watch-approve/server/firebase-credentials.json
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
