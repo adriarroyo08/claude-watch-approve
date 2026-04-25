@@ -1,0 +1,124 @@
+name: Release on PR Merge
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    defaults:
+      run:
+        working-directory: android
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Grant Gradle wrapper execute permission
+        run: chmod +x ./gradlew
+
+      - name: Decode google-services.json (wear)
+        run: echo "${{ secrets.GOOGLE_SERVICES_WEAR }}" | base64 -d > wear/google-services.json
+
+      - name: Decode google-services.json (mobile)
+        run: echo "${{ secrets.GOOGLE_SERVICES_MOBILE }}" | base64 -d > mobile/google-services.json
+
+      - name: Generate release tag from date
+        id: tag
+        run: |
+          TAG="v-auto-$(date +'%Y-%m-%d')"
+          COUNTER=1
+          ORIGINAL_TAG=$TAG
+          while git ls-remote --tags origin "$TAG" | grep -q "$TAG"; do
+            TAG="${ORIGINAL_TAG}-${COUNTER}"
+            COUNTER=$((COUNTER + 1))
+          done
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Generated tag: $TAG"
+
+      - name: Build WearOS APK
+        run: ./gradlew :wear:assembleRelease --no-daemon
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2g"
+
+      - name: Build Mobile APK
+        run: ./gradlew :mobile:assembleRelease --no-daemon
+        env:
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx2g"
+
+      - name: Locate built APKs
+        id: apks
+        run: |
+          WEAR_APK=$(find wear/build/outputs/apk/release -name "*.apk" | head -1)
+          MOBILE_APK=$(find mobile/build/outputs/apk/release -name "*.apk" | head -1)
+
+          if [ -z "$WEAR_APK" ]; then
+            echo "ERROR: WearOS APK not found"
+            exit 1
+          fi
+          if [ -z "$MOBILE_APK" ]; then
+            echo "ERROR: Mobile APK not found"
+            exit 1
+          fi
+
+          cp "$WEAR_APK" "../ClaudeWatch-WearOS-${{ steps.tag.outputs.tag }}.apk"
+          cp "$MOBILE_APK" "../ClaudeWatch-Mobile-${{ steps.tag.outputs.tag }}.apk"
+
+          echo "wear_apk=ClaudeWatch-WearOS-${{ steps.tag.outputs.tag }}.apk" >> $GITHUB_OUTPUT
+          echo "mobile_apk=ClaudeWatch-Mobile-${{ steps.tag.outputs.tag }}.apk" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release and upload APKs
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "ClaudeWatch ${{ steps.tag.outputs.tag }}"
+          body: |
+            ## Release automatica — ${{ steps.tag.outputs.tag }}
+
+            Generada automaticamente al fusionar el PR #${{ github.event.pull_request.number }}:
+            **"${{ github.event.pull_request.title }}"**
+
+            ### APKs incluidos
+            | Archivo | Descripcion |
+            |---------|-------------|
+            | `ClaudeWatch-WearOS-*.apk` | App para smartwatch Wear OS |
+            | `ClaudeWatch-Mobile-*.apk` | App companion para Android |
+
+            ### Instalacion
+            1. Descarga ambos APKs desde los Assets de abajo.
+            2. Instala el APK **Mobile** en tu telefono Android.
+            3. Instala el APK **WearOS** en tu smartwatch via ADB.
+
+            > Release creada automaticamente por GitHub Actions.
+          files: |
+            ${{ steps.apks.outputs.wear_apk }}
+            ${{ steps.apks.outputs.mobile_apk }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
