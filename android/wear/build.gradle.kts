@@ -9,7 +9,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.automatito.claudewearos"
+        applicationId = "com.claudewatch.app"
         minSdk = 31
         targetSdk = 35
         versionCode = 1

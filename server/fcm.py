@@ -45,8 +45,6 @@ def send_approval_notification(
                 notification=messaging.AndroidNotification(
                     channel_id="claude_approvals",
                     sound="approval_sound",
-                    default_vibrate_timings=False,
-                    vibrate_timings=[0, 100, 200, 300],
                 ),
             ),
         )

@@ -33,12 +33,15 @@ def create_approval(body: ApprovalRequest, x_api_key: str = Header()):
     verify_api_key(x_api_key)
     approval = db.create_approval(body.tool_name, body.tool_input_summary, body.context)
     tokens = db.get_device_tokens()
-    send_approval_notification(
-        tokens=tokens,
-        approval_id=approval["id"],
-        tool_name=body.tool_name,
-        summary=body.tool_input_summary,
-    )
+    try:
+        send_approval_notification(
+            tokens=tokens,
+            approval_id=approval["id"],
+            tool_name=body.tool_name,
+            summary=body.tool_input_summary,
+        )
+    except Exception:
+        pass  # FCM not configured yet — approval still created for polling
     return approval
 
 

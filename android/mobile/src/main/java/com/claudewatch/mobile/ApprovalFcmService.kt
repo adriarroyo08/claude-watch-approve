@@ -19,13 +19,26 @@ class ApprovalFcmService : FirebaseMessagingService() {
 
         Log.d("ClaudeWatch", "FCM received: $toolName - $summary")
 
+        // Show notification on mobile with approve/deny buttons
+        MobileApprovalNotificationManager.showNotification(
+            context = applicationContext,
+            approvalId = approvalId,
+            toolName = toolName,
+            summary = summary,
+        )
+
+        // Also forward to watch via Data Layer
         scope.launch {
-            DataLayerSender.sendApprovalRequest(
-                context = applicationContext,
-                approvalId = approvalId,
-                toolName = toolName,
-                summary = summary,
-            )
+            try {
+                DataLayerSender.sendApprovalRequest(
+                    context = applicationContext,
+                    approvalId = approvalId,
+                    toolName = toolName,
+                    summary = summary,
+                )
+            } catch (e: Exception) {
+                Log.e("ClaudeWatch", "Failed to send to watch", e)
+            }
         }
     }
 

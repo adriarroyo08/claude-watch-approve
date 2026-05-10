@@ -10,7 +10,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.claudewatch.mobile"
+        applicationId = "com.claudewatch.app"
         minSdk = 28
         targetSdk = 35
         versionCode = 1
