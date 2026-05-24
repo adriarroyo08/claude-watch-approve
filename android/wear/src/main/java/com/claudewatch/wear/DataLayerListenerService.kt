@@ -10,18 +10,16 @@ class DataLayerListenerService : WearableListenerService() {
     override fun onDataChanged(events: DataEventBuffer) {
         events.forEach { event ->
             if (event.type == DataEvent.TYPE_CHANGED &&
-                event.dataItem.uri.path == "/claude-approval/request"
+                event.dataItem.uri.path == "/claude-watch/summary"
             ) {
                 val dataMap = DataMapItem.fromDataItem(event.dataItem).dataMap
-                val approvalId = dataMap.getString("approval_id") ?: return@forEach
                 val toolName = dataMap.getString("tool_name") ?: return@forEach
                 val summary = dataMap.getString("summary") ?: return@forEach
 
-                Log.d("ClaudeWatch", "Approval request: $toolName - $summary")
+                Log.d("ClaudeWatch", "Summary received: $toolName - $summary")
 
-                ApprovalNotificationManager.showNotification(
+                SummaryNotificationManager.showNotification(
                     context = applicationContext,
-                    approvalId = approvalId,
                     toolName = toolName,
                     summary = summary,
                 )

@@ -13,26 +13,23 @@ class ApprovalFcmService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         val data = message.data
-        val approvalId = data["approval_id"] ?: return
         val toolName = data["tool_name"] ?: return
-        val summary = data["summary"] ?: return
+        val summary = data["message"] ?: data["summary"] ?: return
 
         Log.d("ClaudeWatch", "FCM received: $toolName - $summary")
 
-        // Show notification on mobile with approve/deny buttons
-        MobileApprovalNotificationManager.showNotification(
+        // Show info notification on mobile (no action buttons)
+        MobileSummaryNotificationManager.showNotification(
             context = applicationContext,
-            approvalId = approvalId,
             toolName = toolName,
             summary = summary,
         )
 
-        // Also forward to watch via Data Layer
+        // Forward to watch via Data Layer
         scope.launch {
             try {
-                DataLayerSender.sendApprovalRequest(
+                DataLayerSender.sendSummary(
                     context = applicationContext,
-                    approvalId = approvalId,
                     toolName = toolName,
                     summary = summary,
                 )

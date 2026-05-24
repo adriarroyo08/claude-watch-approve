@@ -9,15 +9,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.*
 
 @Composable
-fun ApprovalScreen(
+fun SummaryScreen(
     toolName: String,
     summary: String,
-    onApprove: () -> Unit,
-    onDeny: () -> Unit,
+    onDismiss: () -> Unit,
 ) {
     ScalingLazyColumn(
         modifier = Modifier
@@ -49,32 +47,18 @@ fun ApprovalScreen(
                 style = MaterialTheme.typography.body2,
                 color = Color.LightGray,
                 textAlign = TextAlign.Center,
-                maxLines = 3,
+                maxLines = 5,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }
 
         item {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.padding(top = 12.dp),
-            ) {
-                Button(
-                    onClick = onDeny,
-                    colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFFD32F2F)),
-                    modifier = Modifier.size(60.dp),
-                ) {
-                    Text("X", fontSize = 20.sp)
-                }
-                Button(
-                    onClick = onApprove,
-                    colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF388E3C)),
-                    modifier = Modifier.size(60.dp),
-                ) {
-                    Text("OK", fontSize = 16.sp)
-                }
-            }
+            CompactChip(
+                onClick = onDismiss,
+                label = { Text("OK") },
+                modifier = Modifier.padding(top = 8.dp),
+            )
         }
     }
 }
@@ -95,7 +79,7 @@ fun WaitingScreen() {
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Waiting for requests...",
+                text = "Waiting for summaries...",
                 style = MaterialTheme.typography.body2,
                 color = Color.Gray,
             )

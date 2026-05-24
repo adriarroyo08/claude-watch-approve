@@ -1,22 +1,21 @@
-# Apps Android — Tu control remoto
+# Apps Android — Tu receptor de resumenes
 
-> Las apps de tu movil y tu reloj que te permiten aprobar o rechazar las acciones de Claude.
+> Las apps de tu movil y tu reloj que muestran los resumenes de Claude Code.
 
 ---
 
 ## Dos apps, un equipo
 
-Claude Watch Approve incluye **dos apps** que trabajan juntas:
+Claude Watch incluye **dos apps** que trabajan juntas:
 
 ```
 +-------------------+          +-------------------+
-|    App Movil      |  <--->   |    App Reloj      |
+|    App Movil      |  ---->   |    App Reloj      |
 |    (Android)      |          |    (WearOS)       |
 |                   |          |                   |
-|  Recibe alertas   |          |  Muestra alertas  |
-|  del servidor     |          |  y te deja        |
-|  y las reenvia    |          |  decidir          |
-|  al reloj         |          |                   |
+|  Recibe resumenes |          |  Muestra los      |
+|  del servidor     |          |  resumenes        |
+|  y los reenvia    |          |                   |
 +-------------------+          +-------------------+
 ```
 
@@ -29,7 +28,7 @@ Claude Watch Approve incluye **dos apps** que trabajan juntas:
 La app del movil es el **puente** entre el servidor y tu reloj. Hace dos cosas:
 
 1. **Configuracion inicial** — Conectar tu movil con el servidor
-2. **Reenvio de alertas** — Recibe notificaciones del servidor y las pasa a tu reloj
+2. **Reenvio de resumenes** — Recibe notificaciones del servidor y las pasa a tu reloj
 
 ### Pantalla principal
 
@@ -38,7 +37,7 @@ Al abrir la app veras una pantalla simple con:
 ```
 +-----------------------------+
 |                             |
-|   Claude Watch Approve      |
+|   Claude Watch              |
 |                             |
 |   URL del servidor          |
 |   [________________________]|
@@ -58,17 +57,17 @@ Al abrir la app veras una pantalla simple con:
 ### Configuracion paso a paso
 
 1. **Abre la app** ClaudeWatch en tu movil
-2. **Introduce la URL** del servidor (te la dara quien configure el sistema)
-3. **Introduce tu clave API** (tu clave personal de acceso)
+2. **Introduce la URL** del servidor
+3. **Introduce tu clave API**
 4. **Pulsa "Save Settings"** para guardar
-5. **Pulsa "Register Device"** para vincular tu movil con el servidor
+5. **Pulsa "Register Device"** para vincular tu movil
 6. Veras un mensaje de confirmacion si todo salio bien
 
 **Despues de esto, no necesitas abrir la app de nuevo.** Funciona en segundo plano.
 
 ### Notificaciones en el movil
 
-Si tu reloj no esta disponible o desconectado, tu movil tambien muestra notificaciones con botones de **Aprobar** y **Denegar**. Asi siempre tienes una forma de responder.
+Tu movil tambien muestra los resumenes como notificaciones. Asi siempre te enteras, aunque tu reloj no este disponible.
 
 ---
 
@@ -76,11 +75,11 @@ Si tu reloj no esta disponible o desconectado, tu movil tambien muestra notifica
 
 ### Para que sirve?
 
-Es la app principal donde tu **decides** si aprobar o rechazar las acciones de Claude Code.
+Es donde ves los **resumenes** de lo que Claude Code hizo.
 
 ### Pantalla de espera
 
-Cuando no hay solicitudes pendientes:
+Cuando no hay resumenes recientes:
 
 ```
      +--( )--+
@@ -89,87 +88,41 @@ Cuando no hay solicitudes pendientes:
      | Watch |
      |       |
      |Esperan|
-     |do...  |
+     |do     |
+     |resume-|
+     |nes... |
      +-------+
 ```
 
-### Pantalla de aprobacion
+### Pantalla de resumen
 
-Cuando llega una solicitud, tu reloj vibra y muestra:
+Cuando llega un resumen, tu reloj vibra y muestra:
 
 ```
      +--( )--+
      |Claude |
      |       |
-     | Bash  |
-     |rm -rf |
-     |/tmp/..|
+     |Sesion |
      |       |
-     |[X][OK]|
+     |Refacto|
+     |rizado |
+     |auth y |
+     |tests..|
+     |       |
+     | [OK]  |
      +-------+
 ```
 
-- **Arriba:** "Claude" (para que sepas de donde viene)
-- **Centro:** El tipo de accion y un resumen de lo que quiere hacer
-- **Abajo:** Dos botones
-  - **X (rojo)** — Rechazar
-  - **OK (verde)** — Aprobar
+- **Arriba:** "Claude" (origen del resumen)
+- **Centro:** Tipo de evento y resumen del trabajo
+- **Abajo:** Boton OK para cerrar
 
 ### Notificaciones
 
 Aunque no tengas la app abierta, recibes notificaciones con:
-
-- **Vibracion doble** (breve-breve) para distinguirla de otras apps
-- **Sonido personalizado** exclusivo de Claude Watch
-- **Botones de accion** directamente en la notificacion
-- **Icono diferente** segun lo que Claude quiere hacer:
-  - Icono de gestion → Ejecutar comando
-  - Icono de edicion → Editar archivo
-  - Icono de guardar → Crear archivo
-  - Icono de alerta → Otras acciones
-
-### Tile (widget en la esfera)
-
-Puedes anadir un **tile** a tu reloj que te muestra de un vistazo:
-
-**Sin solicitudes pendientes:**
-```
-     +--( )--+
-     |       |
-     | Claude|
-     | Watch |
-     |No hay |
-     |pendien|
-     |tes    |
-     +-------+
-```
-
-**Con solicitud pendiente:**
-```
-     +--( )--+
-     |       |
-     | Bash  |
-     |       |
-     |rm -rf |
-     |/tmp/..|
-     |       |
-     +-------+
-```
-
-Para anadirlo, manten pulsada la esfera del reloj y desliza hasta encontrar "Claude Watch".
-
----
-
-## Formas de responder
-
-Tienes **4 formas** de aprobar o rechazar una accion:
-
-| Donde | Como |
-|-------|------|
-| **Notificacion del reloj** | Pulsa Aprobar o Denegar en la notificacion |
-| **App del reloj** | Abre la app y pulsa OK o X |
-| **Notificacion del movil** | Pulsa Aprobar o Denegar en la notificacion del movil |
-| **Tile del reloj** | Toca el tile para abrir la app con la solicitud |
+- **Vibracion suave** para que lo notes
+- **Resumen expandido** del trabajo realizado
+- Se cierra automaticamente al tocarla
 
 ---
 
@@ -186,21 +139,18 @@ Tienes **4 formas** de aprobar o rechazar una accion:
 
 ## Preguntas frecuentes
 
-### Necesito tener la app del reloj abierta todo el rato?
-**No.** Las notificaciones llegan en segundo plano. Puedes responder directamente desde la notificacion sin abrir la app.
+### Necesito tener la app del reloj abierta?
+**No.** Las notificaciones llegan en segundo plano.
 
 ### Que pasa si mi reloj esta sin bateria?
-Puedes aprobar o rechazar desde la **notificacion de tu movil** como alternativa.
+Puedes ver los resumenes en las **notificaciones de tu movil**.
 
 ### Consume mucha bateria la app del reloj?
-**No.** Solo se activa cuando llega una solicitud. El resto del tiempo esta dormida.
+**No.** Solo se activa cuando llega un resumen. El resto del tiempo esta dormida.
 
 ### Puedo usar la app sin reloj, solo con el movil?
-**Si.** Las notificaciones del movil tambien incluyen botones de Aprobar/Denegar.
-
-### Que pasa si desinstalo la app del movil?
-Las notificaciones dejaran de llegar tanto al movil como al reloj. Claude Code seguira funcionando, pero sin el sistema de aprobacion.
+**Si.** El movil tambien recibe los resumenes como notificaciones.
 
 ---
 
-*Tu reloj, tu decision. Control total sobre Claude Code desde tu muneca.*
+*Tu reloj te mantiene informado de lo que Claude hace por ti.*

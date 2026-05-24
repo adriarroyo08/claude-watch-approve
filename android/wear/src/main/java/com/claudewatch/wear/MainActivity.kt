@@ -5,30 +5,24 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
-import com.claudewatch.wear.ui.ApprovalScreen
+import com.claudewatch.wear.ui.SummaryScreen
 import com.claudewatch.wear.ui.WaitingScreen
 import com.google.android.gms.wearable.*
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
 
 class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
-    private var currentApproval by mutableStateOf<ApprovalData?>(null)
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private var currentSummary by mutableStateOf<SummaryData?>(null)
 
-    data class ApprovalData(val id: String, val toolName: String, val summary: String)
+    data class SummaryData(val toolName: String, val summary: String)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            val approval = currentApproval
-            if (approval != null) {
-                ApprovalScreen(
-                    toolName = approval.toolName,
-                    summary = approval.summary,
-                    onApprove = { respond(approval.id, true) },
-                    onDeny = { respond(approval.id, false) },
+            val summary = currentSummary
+            if (summary != null) {
+                SummaryScreen(
+                    toolName = summary.toolName,
+                    summary = summary.summary,
+                    onDismiss = { currentSummary = null },
                 )
             } else {
                 WaitingScreen()
@@ -49,31 +43,13 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     override fun onDataChanged(events: DataEventBuffer) {
         events.forEach { event ->
             if (event.type == DataEvent.TYPE_CHANGED &&
-                event.dataItem.uri.path == "/claude-approval/request"
+                event.dataItem.uri.path == "/claude-watch/summary"
             ) {
                 val dataMap = DataMapItem.fromDataItem(event.dataItem).dataMap
-                currentApproval = ApprovalData(
-                    id = dataMap.getString("approval_id") ?: return@forEach,
+                currentSummary = SummaryData(
                     toolName = dataMap.getString("tool_name") ?: return@forEach,
                     summary = dataMap.getString("summary") ?: return@forEach,
                 )
-            }
-        }
-    }
-
-    private fun respond(approvalId: String, approved: Boolean) {
-        currentApproval = null
-        scope.launch {
-            val request = PutDataMapRequest.create("/claude-approval/response").apply {
-                dataMap.putString("approval_id", approvalId)
-                dataMap.putBoolean("approved", approved)
-                dataMap.putLong("timestamp", System.currentTimeMillis())
-            }.asPutDataRequest().setUrgent()
-
-            try {
-                Wearable.getDataClient(this@MainActivity).putDataItem(request).await()
-            } catch (e: Exception) {
-                Log.e("ClaudeWatch", "Failed to send response", e)
             }
         }
     }

@@ -17,37 +17,38 @@ def _ensure_init():
         _INITIALIZED = True
 
 
-def send_approval_notification(
+def send_info_notification(
     tokens: list[str],
-    approval_id: str,
     tool_name: str,
-    summary: str,
+    message: str,
 ) -> bool:
     if not tokens:
         return False
 
     _ensure_init()
 
+    # Truncate message for push notification
+    body = message[:500] if len(message) > 500 else message
+
     for token in tokens:
-        message = messaging.Message(
+        msg = messaging.Message(
             notification=messaging.Notification(
                 title=f"Claude: {tool_name}",
-                body=summary,
+                body=body,
             ),
             data={
-                "approval_id": approval_id,
+                "type": "info",
                 "tool_name": tool_name,
-                "summary": summary,
+                "message": body,
             },
             token=token,
             android=messaging.AndroidConfig(
                 priority="high",
                 notification=messaging.AndroidNotification(
-                    channel_id="claude_approvals",
-                    sound="approval_sound",
+                    channel_id="claude_summary",
                 ),
             ),
         )
-        messaging.send(message)
+        messaging.send(msg)
 
     return True

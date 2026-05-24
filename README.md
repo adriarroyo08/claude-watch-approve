@@ -1,80 +1,71 @@
-# Claude Watch Approve
+# Claude Watch
 
-> Aprueba o rechaza las acciones de Claude Code directamente desde tu smartwatch.
+> Recibe en tu smartwatch un resumen de lo que Claude Code ha hecho, justo cuando termina.
 
 ---
 
-## Que es Claude Watch Approve?
+## Que es Claude Watch?
 
-Claude Watch Approve es un sistema de seguridad personal que te permite supervisar y controlar lo que hace Claude Code en tu ordenador, **directamente desde tu reloj inteligente WearOS**.
+Claude Watch es un sistema de notificaciones que te mantiene informado de lo que Claude Code hace en tu ordenador, **directamente en tu reloj inteligente WearOS**.
 
-Cuando Claude Code quiere hacer algo importante en tu sistema — como ejecutar un comando, modificar un archivo o escribir codigo nuevo — tu reloj vibra y te muestra exactamente que quiere hacer. Con un simple toque, decides si lo permites o lo bloqueas.
+Cuando Claude Code termina una tarea — ya sea escribir codigo, ejecutar comandos o modificar archivos — tu reloj vibra y te muestra un resumen de lo que hizo. Asi puedes dejar a Claude trabajando de forma autonoma y saber exactamente que ocurrio sin tener que estar mirando la pantalla del ordenador.
 
-**Es como tener un guardia de seguridad en tu muneca.**
+**Es como tener un asistente que te susurra al oido cuando ha terminado.**
 
 ---
 
 ## Como funciona?
 
-### El flujo en 4 pasos
+### El flujo en 3 pasos
 
 ```
-1. Claude quiere hacer algo       2. Tu reloj vibra
-   en tu ordenador                   y te avisa
-        |                               |
-        v                               v
-   +-----------+                 +---------------+
-   |  Claude   |  --- envia ---> |   Tu reloj    |
-   |   Code    |                 |   WearOS      |
-   +-----------+                 +---------------+
-                                        |
-                                   Tu decides:
-                                  Aprobar o Denegar
-                                        |
-        +-----------+                   |
-        |  Claude   | <--- respuesta ---+
-        |   Code    |
-        +-----------+
-              |
-   3. Si aprobaste:              4. Si rechazaste:
-      Claude ejecuta la accion      Claude se detiene
+1. Claude trabaja              2. Claude termina
+   en tu ordenador                y te avisa
+        |                            |
+        v                            v
+   +-----------+              +---------------+
+   |  Claude   |  -- envia -> |   Tu reloj    |
+   |   Code    |   resumen    |   WearOS      |
+   +-----------+              +---------------+
+                                     |
+                                3. Tu ves el
+                                   resumen de
+                                   lo que hizo
 ```
 
 ### Ejemplo practico
 
-Imagina que le pides a Claude Code: *"Limpia los archivos temporales del proyecto"*
+Le pides a Claude Code: *"Refactoriza el modulo de autenticacion y anade tests"*
 
-1. Claude decide ejecutar el comando `rm -rf /tmp/cache`
-2. **Tu reloj vibra** y muestra:
-   - **Herramienta:** Bash
-   - **Detalle:** `rm -rf /tmp/cache`
-3. Tu miras el reloj y pulsas:
-   - **OK** (boton verde) → Claude ejecuta el comando
-   - **X** (boton rojo) → Claude no hace nada y busca otra forma
+Claude trabaja durante unos minutos. Cuando termina, **tu reloj vibra** y muestra:
+
+```
+     +--( )--+
+     |Claude |
+     |       |
+     |Sesion |
+     |       |
+     |Refacto|
+     |rizado |
+     |auth...|
+     |       |
+     |  [OK] |
+     +-------+
+```
+
+Asi sabes que ya termino y que hizo, sin interrumpir lo que estuvieras haciendo.
 
 ---
 
-## Que acciones requieren tu aprobacion?
+## Que informacion recibes?
 
-### Acciones que SI necesitan aprobacion
+Cada vez que Claude termina una sesion de trabajo, recibes:
 
-| Accion | Que significa |
-|--------|--------------|
-| **Ejecutar comandos** | Claude quiere ejecutar algo en la terminal (instalar paquetes, borrar archivos, ejecutar scripts...) |
-| **Editar archivos** | Claude quiere modificar un archivo existente en tu proyecto |
-| **Crear archivos** | Claude quiere crear un archivo nuevo |
-| **Editar notebooks** | Claude quiere modificar un cuaderno Jupyter |
-| **Acciones externas** | Claude quiere interactuar con servicios externos (enviar mensajes, crear issues, publicar codigo...) |
-
-### Acciones que NO necesitan aprobacion
-
-| Accion | Por que es segura |
-|--------|-------------------|
-| **Leer archivos** | Solo mira, no toca nada |
-| **Buscar archivos** | Solo busca nombres de archivos |
-| **Buscar texto** | Solo busca texto dentro de archivos |
-| **Buscar en internet** | Solo consulta informacion |
-| **Investigar** | Claude piensa y analiza, sin modificar nada |
+| Campo | Que te dice |
+|-------|-------------|
+| **Tipo** | Siempre "Sesion" (indica que Claude termino) |
+| **Motivo** | Por que termino (tarea completada, error, etc.) |
+| **Resumen** | Descripcion de lo que hizo durante la sesion |
 
 ---
 
@@ -82,53 +73,48 @@ Imagina que le pides a Claude Code: *"Limpia los archivos temporales del proyect
 
 ### Pantalla principal
 
-Cuando no hay solicitudes pendientes, tu reloj muestra:
+Cuando no hay resumenes recientes:
 
 ```
     +-----------------+
     |                 |
     |  Claude Watch   |
-    |  Esperando...   |
+    |  Esperando      |
+    |  resumenes...   |
     |                 |
     +-----------------+
 ```
 
-### Cuando llega una solicitud
+### Cuando llega un resumen
 
-Tu reloj vibra con un patron doble (breve-breve) y muestra:
+Tu reloj vibra suavemente y muestra:
 
 ```
     +-----------------+
     |     Claude      |
     |                 |
-    |      Bash       |
-    | rm -rf /tmp/... |
+    |     Sesion      |
     |                 |
-    |  [X]      [OK]  |
-    |  rojo    verde  |
+    | Refactorizado   |
+    | el modulo de    |
+    | autenticacion   |
+    | y anadidos 5    |
+    | tests unitarios |
+    |                 |
+    |     [OK]        |
     +-----------------+
 ```
 
-- **Titulo:** El tipo de accion (Bash, Edit, Write...)
-- **Detalle:** Un resumen de lo que Claude quiere hacer
-- **Boton X (rojo):** Rechazar la accion
-- **Boton OK (verde):** Aprobar la accion
+- **Titulo:** "Claude" + tipo de evento
+- **Contenido:** Resumen del trabajo realizado
+- **Boton OK:** Cierra el resumen
 
 ### Notificaciones
 
 Aunque no tengas la app abierta, recibes una **notificacion** en tu reloj con:
-- Vibracion personalizada para que lo distingas de otras notificaciones
-- Sonido propio
-- Botones de **Aprobar** y **Denegar** directamente en la notificacion (sin necesidad de abrir la app)
-- Icono diferente segun el tipo de accion
-
-### Tile (acceso rapido)
-
-Puedes anadir un **tile** (widget) a la esfera de tu reloj que muestra:
-- Si no hay solicitudes: *"No pending requests"*
-- Si hay una solicitud pendiente: El nombre de la herramienta y un resumen
-
-Asi puedes ver de un vistazo si Claude necesita algo, sin abrir la app.
+- Vibracion suave para que lo notes
+- El resumen completo del trabajo de Claude
+- Se cierra automaticamente al tocarla
 
 ---
 
@@ -138,7 +124,7 @@ La app del movil actua como **puente** entre el servidor y tu reloj. No necesita
 
 ### Configuracion inicial
 
-Al abrir la app del movil, veras una pantalla sencilla con:
+Al abrir la app del movil, veras:
 
 1. **URL del servidor** — La direccion donde se ejecuta el servicio
 2. **API Key** — Tu clave personal de seguridad
@@ -147,55 +133,39 @@ Al abrir la app del movil, veras una pantalla sencilla con:
 
 Una vez configurada, la app funciona en segundo plano automaticamente.
 
-### Tambien recibes notificaciones en el movil
+### Tambien recibes resumenes en el movil
 
-Si tu reloj no esta disponible, tu **movil tambien muestra las solicitudes** con botones de Aprobar/Denegar, asi que siempre tienes una forma de responder.
-
----
-
-## Resumen de sesion
-
-Cuando Claude termina una tarea, recibes una **notificacion resumen** en tu reloj con lo que hizo. Asi puedes estar al tanto de todo sin estar mirando la pantalla del ordenador.
+Tu **movil tambien muestra los resumenes** como notificaciones, asi que aunque tu reloj no este disponible, siempre te enteras de lo que Claude hizo.
 
 ---
 
-## Seguridad y timeouts
+## Modo de uso ideal
 
-### Que pasa si no respondo?
+Claude Watch esta pensado para usarse con Claude Code en **modo autonomo** (bypass). El flujo ideal es:
 
-Si no respondes en **5 minutos**, la accion se **bloquea automaticamente** por seguridad. Claude no hara nada sin tu permiso explícito.
+1. Le das una tarea a Claude Code
+2. Dejas que trabaje sin interrupciones
+3. Cuando termina, tu reloj te avisa con un resumen
+4. Tu decides si necesitas revisar algo o darle otra tarea
 
-### Que pasa si pierdo la conexion?
-
-Si el servidor no esta disponible (sin internet, servidor apagado...), Claude **continua funcionando normalmente**. El sistema esta disenado para no bloquear tu trabajo si hay un problema de conexion.
-
-### Resumen de comportamiento
-
-| Situacion | Que ocurre |
-|-----------|------------|
-| Apruebas en el reloj | Claude ejecuta la accion |
-| Rechazas en el reloj | Claude no ejecuta la accion |
-| No respondes en 5 min | La accion se bloquea (por seguridad) |
-| Sin conexion al servidor | Claude continua normalmente |
+Esto te permite **hacer otras cosas** mientras Claude trabaja, sabiendo que te avisara cuando haya terminado.
 
 ---
 
 ## Componentes del sistema
 
-Claude Watch Approve se compone de tres partes que trabajan juntas:
-
 ```
 +------------------+     +------------------+     +------------------+
 |   Tu ordenador   |     |    Tu movil      |     |   Tu reloj       |
 |                  |     |    (Android)     |     |   (WearOS)       |
-|  Claude Code     | --> |  App puente      | --> |  App de          |
-|  con vigilancia  |     |  (segundo plano) |     |  aprobacion      |
+|  Claude Code     | --> |  App puente      | --> |  Resumenes       |
+|  con notificador |     |  (segundo plano) |     |  de sesion       |
 +------------------+     +------------------+     +------------------+
 ```
 
-1. **Ordenador:** Claude Code funciona como siempre, pero con un vigilante que detecta acciones importantes
-2. **Movil:** Recibe las alertas y las reenvia a tu reloj (tambien puede aprobar/denegar)
-3. **Reloj:** Donde tu decides si aprobar o rechazar cada accion
+1. **Ordenador:** Claude Code trabaja normalmente y al terminar envia un resumen
+2. **Movil:** Recibe el resumen y lo reenvia a tu reloj (tambien lo muestra como notificacion)
+3. **Reloj:** Donde tu ves que hizo Claude
 
 ---
 
@@ -213,23 +183,23 @@ Claude Watch Approve se compone de tres partes que trabajan juntas:
 ## Preguntas frecuentes
 
 ### Necesito tener la app del reloj abierta?
-**No.** Las notificaciones llegan aunque la app este cerrada. Puedes aprobar o denegar directamente desde la notificacion.
+**No.** Las notificaciones llegan aunque la app este cerrada.
 
-### Puedo aprobar desde el movil en vez del reloj?
-**Si.** Si tu reloj no esta accesible, puedes responder desde la notificacion del movil.
+### Puedo ver los resumenes en el movil?
+**Si.** Tu movil tambien recibe notificaciones con los resumenes.
 
-### Que pasa si apruebo sin querer?
-Claude ejecutara la accion. Si quieres mas seguridad, revisa siempre el detalle de lo que Claude quiere hacer antes de pulsar.
-
-### Puedo cambiar el tiempo de espera?
-**Si.** El tiempo por defecto es de 5 minutos, pero se puede ajustar en la configuracion del sistema.
+### Que pasa si pierdo la conexion?
+Claude Code sigue funcionando normalmente. Los resumenes simplemente no se envian hasta que vuelva la conexion.
 
 ### La app consume mucha bateria?
-**No.** La app del reloj solo se activa cuando recibe una solicitud. El resto del tiempo esta en reposo.
+**No.** Solo se activa cuando llega un resumen. El resto del tiempo esta dormida.
 
 ### Funciona con cualquier reloj?
 Solo con relojes que usen **WearOS 3.0 o superior** (Google Pixel Watch, Samsung Galaxy Watch 4+, TicWatch Pro 5, etc.).
 
+### Puedo seguir usando el modo de aprobacion?
+No. Esta version esta disenada exclusivamente para enviar resumenes. Claude trabaja de forma autonoma y tu recibes un informe cuando termina.
+
 ---
 
-*Claude Watch Approve — Control total desde tu muneca.*
+*Claude Watch — Siempre informado, desde tu muneca.*

@@ -17,7 +17,7 @@ from server.main import app
 def reset_db():
     """Reset database between tests."""
     from server.main import db
-    db._conn.executescript("DELETE FROM approvals; DELETE FROM devices;")
+    db._conn.executescript("DELETE FROM devices;")
     db._conn.commit()
     yield
 
@@ -33,101 +33,6 @@ def bad_headers():
 
 
 @pytest.mark.anyio
-async def test_create_approval(headers):
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        with patch("server.main.send_approval_notification", return_value=True):
-            resp = await client.post(
-                "/approval-request",
-                json={"tool_name": "Bash", "tool_input_summary": "npm install", "context": "Installing deps"},
-                headers=headers,
-            )
-    assert resp.status_code == 201
-    data = resp.json()
-    assert data["id"] is not None
-    assert data["status"] == "pending"
-
-
-@pytest.mark.anyio
-async def test_create_approval_unauthorized():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.post(
-            "/approval-request",
-            json={"tool_name": "Bash", "tool_input_summary": "ls"},
-            headers={"X-Api-Key": "wrong"},
-        )
-    assert resp.status_code == 403
-
-
-@pytest.mark.anyio
-async def test_get_approval_status(headers):
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        with patch("server.main.send_approval_notification", return_value=True):
-            create_resp = await client.post(
-                "/approval-request",
-                json={"tool_name": "Edit", "tool_input_summary": "src/app.ts"},
-                headers=headers,
-            )
-        approval_id = create_resp.json()["id"]
-
-        resp = await client.get(f"/approval-status/{approval_id}", headers=headers)
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "pending"
-
-
-@pytest.mark.anyio
-async def test_get_approval_status_not_found(headers):
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.get("/approval-status/nonexistent", headers=headers)
-    assert resp.status_code == 404
-
-
-@pytest.mark.anyio
-async def test_approve_request(headers):
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        with patch("server.main.send_approval_notification", return_value=True):
-            create_resp = await client.post(
-                "/approval-request",
-                json={"tool_name": "Bash", "tool_input_summary": "rm -rf node_modules"},
-                headers=headers,
-            )
-        approval_id = create_resp.json()["id"]
-
-        resp = await client.post(
-            f"/approval-response/{approval_id}",
-            json={"approved": True},
-            headers=headers,
-        )
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "approved"
-
-
-@pytest.mark.anyio
-async def test_deny_request(headers):
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        with patch("server.main.send_approval_notification", return_value=True):
-            create_resp = await client.post(
-                "/approval-request",
-                json={"tool_name": "Write", "tool_input_summary": "secrets.env"},
-                headers=headers,
-            )
-        approval_id = create_resp.json()["id"]
-
-        resp = await client.post(
-            f"/approval-response/{approval_id}",
-            json={"approved": False},
-            headers=headers,
-        )
-    assert resp.status_code == 200
-    assert resp.json()["status"] == "denied"
-
-
-@pytest.mark.anyio
 async def test_register_device(headers):
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -137,3 +42,95 @@ async def test_register_device(headers):
             headers=headers,
         )
     assert resp.status_code == 200
+    assert resp.json()["status"] == "registered"
+
+
+@pytest.mark.anyio
+async def test_register_device_unauthorized(bad_headers):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/register-device",
+            json={"fcm_token": "token-abc123"},
+            headers=bad_headers,
+        )
+    assert resp.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_notify_no_devices(headers):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        with patch("server.main.send_info_notification", return_value=False) as mock_notify:
+            resp = await client.post(
+                "/notify",
+                json={"tool_name": "Bash", "summary": "Ran npm install"},
+                headers=headers,
+            )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["status"] == "sent"
+    assert data["devices"] == 0
+    mock_notify.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_notify_with_result(headers):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Register a device first
+        await client.post(
+            "/register-device",
+            json={"fcm_token": "device-token-xyz"},
+            headers=headers,
+        )
+        with patch("server.main.send_info_notification", return_value=True) as mock_notify:
+            resp = await client.post(
+                "/notify",
+                json={"tool_name": "Edit", "summary": "Edited file", "result": "Done"},
+                headers=headers,
+            )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["status"] == "sent"
+    assert data["devices"] == 1
+    mock_notify.assert_called_once_with(
+        tokens=["device-token-xyz"],
+        tool_name="Edit",
+        message="Done",
+    )
+
+
+@pytest.mark.anyio
+async def test_notify_uses_summary_when_no_result(headers):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post(
+            "/register-device",
+            json={"fcm_token": "device-token-xyz"},
+            headers=headers,
+        )
+        with patch("server.main.send_info_notification", return_value=True) as mock_notify:
+            resp = await client.post(
+                "/notify",
+                json={"tool_name": "Read", "summary": "Read config.py"},
+                headers=headers,
+            )
+    assert resp.status_code == 201
+    mock_notify.assert_called_once_with(
+        tokens=["device-token-xyz"],
+        tool_name="Read",
+        message="Read config.py",
+    )
+
+
+@pytest.mark.anyio
+async def test_notify_unauthorized(bad_headers):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            "/notify",
+            json={"tool_name": "Bash", "summary": "ls"},
+            headers=bad_headers,
+        )
+    assert resp.status_code == 403
