@@ -1,205 +1,235 @@
 # Claude Watch Approve
 
-Sistema de aprobacion remota para Claude Code desde tu smartwatch WearOS. Cuando Claude Code intenta ejecutar una accion potencialmente peligrosa (Bash, Edit, Write...), recibiras una notificacion en tu reloj para aprobar o denegar la ejecucion.
+> Aprueba o rechaza las acciones de Claude Code directamente desde tu smartwatch.
 
-## Arquitectura
+---
+
+## Que es Claude Watch Approve?
+
+Claude Watch Approve es un sistema de seguridad personal que te permite supervisar y controlar lo que hace Claude Code en tu ordenador, **directamente desde tu reloj inteligente WearOS**.
+
+Cuando Claude Code quiere hacer algo importante en tu sistema — como ejecutar un comando, modificar un archivo o escribir codigo nuevo — tu reloj vibra y te muestra exactamente que quiere hacer. Con un simple toque, decides si lo permites o lo bloqueas.
+
+**Es como tener un guardia de seguridad en tu muneca.**
+
+---
+
+## Como funciona?
+
+### El flujo en 4 pasos
 
 ```
-Claude Code CLI
-       |
-  Hook (pre_tool_use)
-       |
-  POST /approval-request
-       |
-  Backend Server (FastAPI)
-       |
-  Firebase Cloud Messaging
-       |
-  Mobile App (Android)
-       |
-  Wearable Data Layer
-       |
-  WearOS App (Smartwatch)
-       |
-  Usuario: Approve / Deny
-       |
-  (camino inverso hasta el Hook)
+1. Claude quiere hacer algo       2. Tu reloj vibra
+   en tu ordenador                   y te avisa
+        |                               |
+        v                               v
+   +-----------+                 +---------------+
+   |  Claude   |  --- envia ---> |   Tu reloj    |
+   |   Code    |                 |   WearOS      |
+   +-----------+                 +---------------+
+                                        |
+                                   Tu decides:
+                                  Aprobar o Denegar
+                                        |
+        +-----------+                   |
+        |  Claude   | <--- respuesta ---+
+        |   Code    |
+        +-----------+
+              |
+   3. Si aprobaste:              4. Si rechazaste:
+      Claude ejecuta la accion      Claude se detiene
 ```
 
-## Componentes
+### Ejemplo practico
 
-### 1. Hook - Interceptor de Claude Code
+Imagina que le pides a Claude Code: *"Limpia los archivos temporales del proyecto"*
 
-**`hook/claude_watch_hook.py`**
+1. Claude decide ejecutar el comando `rm -rf /tmp/cache`
+2. **Tu reloj vibra** y muestra:
+   - **Herramienta:** Bash
+   - **Detalle:** `rm -rf /tmp/cache`
+3. Tu miras el reloj y pulsas:
+   - **OK** (boton verde) → Claude ejecuta el comando
+   - **X** (boton rojo) → Claude no hace nada y busca otra forma
 
-Intercepta las ejecuciones de herramientas antes de que se ejecuten.
+---
 
-**Herramientas que requieren aprobacion:**
-- `Bash`, `Edit`, `Write`, `NotebookEdit`
-- Acciones MCP excepto las que empiezan por: get, list, search, read, fetch, find, check, validate
+## Que acciones requieren tu aprobacion?
 
-**Herramientas seguras (sin aprobacion):**
-- `Read`, `Glob`, `Grep`, `Agent`, `WebSearch`, `WebFetch`, `Skill`, `TaskList`, `TaskGet`
+### Acciones que SI necesitan aprobacion
 
-**Variables de entorno:**
-| Variable | Default | Descripcion |
-|----------|---------|-------------|
-| `CLAUDE_WATCH_URL` | `https://claude-watch.automatito.win` | URL del servidor |
-| `CLAUDE_WATCH_API_KEY` | - | Clave de autenticacion |
-| `CLAUDE_WATCH_POLL_INTERVAL` | `2` | Intervalo de polling (segundos) |
-| `CLAUDE_WATCH_TIMEOUT` | `300` | Timeout maximo (segundos) |
+| Accion | Que significa |
+|--------|--------------|
+| **Ejecutar comandos** | Claude quiere ejecutar algo en la terminal (instalar paquetes, borrar archivos, ejecutar scripts...) |
+| **Editar archivos** | Claude quiere modificar un archivo existente en tu proyecto |
+| **Crear archivos** | Claude quiere crear un archivo nuevo |
+| **Editar notebooks** | Claude quiere modificar un cuaderno Jupyter |
+| **Acciones externas** | Claude quiere interactuar con servicios externos (enviar mensajes, crear issues, publicar codigo...) |
 
-**Comportamiento fail-open:** si el servidor no responde, la ejecucion se permite automaticamente.
+### Acciones que NO necesitan aprobacion
 
-### 2. Servidor Backend
+| Accion | Por que es segura |
+|--------|-------------------|
+| **Leer archivos** | Solo mira, no toca nada |
+| **Buscar archivos** | Solo busca nombres de archivos |
+| **Buscar texto** | Solo busca texto dentro de archivos |
+| **Buscar en internet** | Solo consulta informacion |
+| **Investigar** | Claude piensa y analiza, sin modificar nada |
 
-**`server/`** — FastAPI + SQLite + Firebase Admin SDK
+---
 
-Escucha en `http://127.0.0.1:8400`, proxy via Nginx en `claude-watch.automatito.win`.
+## La app en tu reloj
 
-#### Endpoints
+### Pantalla principal
 
-| Metodo | Ruta | Descripcion |
-|--------|------|-------------|
-| POST | `/approval-request` | Crea solicitud de aprobacion y envia FCM |
-| GET | `/approval-status/{id}` | Consulta estado (pending/approved/denied) |
-| POST | `/approval-response/{id}` | Envia decision desde mobile/watch |
-| POST | `/register-device` | Registra token FCM del dispositivo |
+Cuando no hay solicitudes pendientes, tu reloj muestra:
 
-Todos los endpoints requieren header `X-Api-Key`.
-
-#### Base de datos (SQLite)
-
-**Tabla `approvals`:** id, tool_name, tool_input_summary, context, status, created_at, resolved_at
-
-**Tabla `devices`:** id, fcm_token, updated_at
-
-### 3. Mobile App (Android)
-
-**`android/mobile/`** — Kotlin + Jetpack Compose
-
-App companion que actua como puente entre FCM y el reloj.
-
-| Clase | Funcion |
-|-------|---------|
-| `MainActivity` | Pantalla de configuracion (URL servidor + API key) |
-| `SettingsStore` | Persistencia con DataStore Preferences |
-| `ApprovalFcmService` | Recibe notificaciones FCM y las reenvia al reloj |
-| `DataLayerSender` | Envia solicitudes al watch via Wearable Data Layer |
-| `DataLayerReceiver` | Recibe respuestas del watch y las envia al servidor |
-| `ApiClient` | Cliente HTTP Retrofit para comunicar con el backend |
-| `SettingsScreen` | UI de configuracion con Material 3 |
-
-**Requisitos:** Android 9.0+ (API 28)
-
-### 4. WearOS App (Smartwatch)
-
-**`android/wear/`** — Kotlin + Wear Compose + Tiles API
-
-| Clase | Funcion |
-|-------|---------|
-| `MainActivity` | Pantalla principal con botones Approve/Deny |
-| `DataLayerListenerService` | Escucha solicitudes en background |
-| `ApprovalNotificationManager` | Notificaciones con vibracion, sonido y acciones |
-| `ApprovalActionReceiver` | Procesa respuestas desde las acciones de notificacion |
-| `ApprovalTileService` | Tile para acceso rapido desde la esfera del reloj |
-| `ApprovalScreen` | UI Compose con botones circulares Deny (rojo) / Approve (verde) |
-
-**Requisitos:** WearOS 3.0+ (API 31)
-
-**Notificaciones:** Vibracion personalizada, sonido custom (`approval_sound.ogg`), iconos segun tipo de herramienta.
-
-## Flujo completo
-
-1. Claude Code ejecuta una herramienta (ej: `Bash: rm -rf /tmp/cache`)
-2. El hook intercepta y envia POST `/approval-request` al servidor
-3. El servidor crea registro en DB y envia notificacion FCM
-4. El mobile recibe FCM y reenvia al watch via Wearable Data Layer
-5. El watch muestra notificacion con Approve/Deny
-6. El usuario pulsa en el reloj
-7. El watch envia respuesta al mobile via Data Layer
-8. El mobile envia POST `/approval-response/{id}` al servidor
-9. El hook (polling cada 2s) recibe la decision
-10. Si aprobado: la herramienta se ejecuta. Si denegado: se bloquea.
-
-## Build
-
-### Requisitos
-- Java 17
-- Android SDK 35
-
-### Compilar
-
-```bash
-cd android
-./gradlew :wear:assembleDebug      # WearOS
-./gradlew :mobile:assembleDebug    # Mobile
-./gradlew assembleRelease          # Ambos (release)
+```
+    +-----------------+
+    |                 |
+    |  Claude Watch   |
+    |  Esperando...   |
+    |                 |
+    +-----------------+
 ```
 
-### Instalar via ADB
+### Cuando llega una solicitud
 
-```bash
-adb install wear/build/outputs/apk/debug/wear-debug.apk
-adb install mobile/build/outputs/apk/debug/mobile-debug.apk
+Tu reloj vibra con un patron doble (breve-breve) y muestra:
+
+```
+    +-----------------+
+    |     Claude      |
+    |                 |
+    |      Bash       |
+    | rm -rf /tmp/... |
+    |                 |
+    |  [X]      [OK]  |
+    |  rojo    verde  |
+    +-----------------+
 ```
 
-### CI/CD
+- **Titulo:** El tipo de accion (Bash, Edit, Write...)
+- **Detalle:** Un resumen de lo que Claude quiere hacer
+- **Boton X (rojo):** Rechazar la accion
+- **Boton OK (verde):** Aprobar la accion
 
-El workflow de GitHub Actions compila y publica APKs automaticamente al mergear un PR a `main`. Los `google-services.json` se inyectan desde GitHub Secrets en base64:
+### Notificaciones
 
-- `GOOGLE_SERVICES_WEAR` — base64 del google-services.json del modulo wear
-- `GOOGLE_SERVICES_MOBILE` — base64 del google-services.json del modulo mobile
+Aunque no tengas la app abierta, recibes una **notificacion** en tu reloj con:
+- Vibracion personalizada para que lo distingas de otras notificaciones
+- Sonido propio
+- Botones de **Aprobar** y **Denegar** directamente en la notificacion (sin necesidad de abrir la app)
+- Icono diferente segun el tipo de accion
 
-## Servidor - Despliegue
+### Tile (acceso rapido)
 
-### Variables de entorno
+Puedes anadir un **tile** (widget) a la esfera de tu reloj que muestra:
+- Si no hay solicitudes: *"No pending requests"*
+- Si hay una solicitud pendiente: El nombre de la herramienta y un resumen
 
-```bash
-export CLAUDE_WATCH_API_KEY="tu-clave-secreta"
-export CLAUDE_WATCH_DB_PATH="/path/to/approvals.db"
-export CLAUDE_WATCH_FCM_CREDENTIALS="/path/to/firebase-credentials.json"
-export CLAUDE_WATCH_TIMEOUT="300"
+Asi puedes ver de un vistazo si Claude necesita algo, sin abrir la app.
+
+---
+
+## La app en tu movil
+
+La app del movil actua como **puente** entre el servidor y tu reloj. No necesitas interactuar con ella a diario.
+
+### Configuracion inicial
+
+Al abrir la app del movil, veras una pantalla sencilla con:
+
+1. **URL del servidor** — La direccion donde se ejecuta el servicio
+2. **API Key** — Tu clave personal de seguridad
+3. **Boton "Save Settings"** — Guarda tu configuracion
+4. **Boton "Register Device"** — Vincula tu movil al servidor
+
+Una vez configurada, la app funciona en segundo plano automaticamente.
+
+### Tambien recibes notificaciones en el movil
+
+Si tu reloj no esta disponible, tu **movil tambien muestra las solicitudes** con botones de Aprobar/Denegar, asi que siempre tienes una forma de responder.
+
+---
+
+## Resumen de sesion
+
+Cuando Claude termina una tarea, recibes una **notificacion resumen** en tu reloj con lo que hizo. Asi puedes estar al tanto de todo sin estar mirando la pantalla del ordenador.
+
+---
+
+## Seguridad y timeouts
+
+### Que pasa si no respondo?
+
+Si no respondes en **5 minutos**, la accion se **bloquea automaticamente** por seguridad. Claude no hara nada sin tu permiso explícito.
+
+### Que pasa si pierdo la conexion?
+
+Si el servidor no esta disponible (sin internet, servidor apagado...), Claude **continua funcionando normalmente**. El sistema esta disenado para no bloquear tu trabajo si hay un problema de conexion.
+
+### Resumen de comportamiento
+
+| Situacion | Que ocurre |
+|-----------|------------|
+| Apruebas en el reloj | Claude ejecuta la accion |
+| Rechazas en el reloj | Claude no ejecuta la accion |
+| No respondes en 5 min | La accion se bloquea (por seguridad) |
+| Sin conexion al servidor | Claude continua normalmente |
+
+---
+
+## Componentes del sistema
+
+Claude Watch Approve se compone de tres partes que trabajan juntas:
+
+```
++------------------+     +------------------+     +------------------+
+|   Tu ordenador   |     |    Tu movil      |     |   Tu reloj       |
+|                  |     |    (Android)     |     |   (WearOS)       |
+|  Claude Code     | --> |  App puente      | --> |  App de          |
+|  con vigilancia  |     |  (segundo plano) |     |  aprobacion      |
++------------------+     +------------------+     +------------------+
 ```
 
-### Ejecutar
+1. **Ordenador:** Claude Code funciona como siempre, pero con un vigilante que detecta acciones importantes
+2. **Movil:** Recibe las alertas y las reenvia a tu reloj (tambien puede aprobar/denegar)
+3. **Reloj:** Donde tu decides si aprobar o rechazar cada accion
 
-```bash
-cd server
-pip install -r requirements.txt
-uvicorn main:app --host 127.0.0.1 --port 8400
-```
+---
 
-### Nginx (proxy)
+## Requisitos
 
-Dominio: `claude-watch.automatito.win` → `http://127.0.0.1:8400`
+| Dispositivo | Requisito minimo |
+|-------------|-----------------|
+| Reloj | WearOS 3.0 o superior |
+| Movil | Android 9.0 o superior |
+| Movil y reloj | Deben estar vinculados entre si |
+| Conexion | El movil necesita internet |
 
-## Tests
+---
 
-```bash
-# Server tests
-cd server && pytest
+## Preguntas frecuentes
 
-# Hook tests
-cd hook && pytest
-```
+### Necesito tener la app del reloj abierta?
+**No.** Las notificaciones llegan aunque la app este cerrada. Puedes aprobar o denegar directamente desde la notificacion.
 
-33+ tests cubriendo endpoints, base de datos, FCM y logica del hook.
+### Puedo aprobar desde el movil en vez del reloj?
+**Si.** Si tu reloj no esta accesible, puedes responder desde la notificacion del movil.
 
-## Configuracion del Mobile
+### Que pasa si apruebo sin querer?
+Claude ejecutara la accion. Si quieres mas seguridad, revisa siempre el detalle de lo que Claude quiere hacer antes de pulsar.
 
-1. Abre la app ClaudeWatch en tu telefono
-2. Introduce la URL del servidor y tu API key
-3. Pulsa "Save Settings"
-4. Pulsa "Register Device" para registrar el token FCM
+### Puedo cambiar el tiempo de espera?
+**Si.** El tiempo por defecto es de 5 minutos, pero se puede ajustar en la configuracion del sistema.
 
-## Stack Tecnologico
+### La app consume mucha bateria?
+**No.** La app del reloj solo se activa cuando recibe una solicitud. El resto del tiempo esta en reposo.
 
-| Componente | Tecnologia |
-|------------|------------|
-| Hook | Python 3 |
-| Backend | FastAPI + SQLite + Firebase Admin |
-| Mobile | Kotlin, Jetpack Compose, Retrofit, DataStore, FCM |
-| WearOS | Kotlin, Wear Compose, Tiles API, Wearable Data Layer |
-| CI/CD | GitHub Actions |
-| Proxy | Nginx |
+### Funciona con cualquier reloj?
+Solo con relojes que usen **WearOS 3.0 o superior** (Google Pixel Watch, Samsung Galaxy Watch 4+, TicWatch Pro 5, etc.).
+
+---
+
+*Claude Watch Approve — Control total desde tu muneca.*
