@@ -16,22 +16,30 @@ Cuando Claude Code termina una tarea — ya sea escribir codigo, ejecutar comand
 
 ## Como funciona?
 
-### El flujo en 3 pasos
+### El flujo completo
 
 ```
-1. Claude trabaja              2. Claude termina
-   en tu ordenador                y te avisa
-        |                            |
-        v                            v
-   +-----------+              +---------------+
-   |  Claude   |  -- envia -> |   Tu reloj    |
-   |   Code    |   resumen    |   WearOS      |
-   +-----------+              +---------------+
-                                     |
-                                3. Tu ves el
-                                   resumen de
-                                   lo que hizo
+                        CLAUDE WATCH — FLUJO DE NOTIFICACION
+
+  +-----------+       +-----------+       +-----------+       +-----------+
+  |           |       |           |       |           |       |           |
+  |  Claude   | ----> | Servidor  | ----> |  Tu movil | ----> | Tu reloj  |
+  |   Code    |  POST |  (nube)   |  FCM  | (Android) |  BT  |  (WearOS) |
+  |           | /notify|          | push  |           | sync  |           |
+  +-----------+       +-----------+       +-----------+       +-----------+
+                                                                    |
+       "Tarea                "Envia                "Reenvia          |
+        terminada"            notif a               al reloj"    Tu lees
+                              dispositivos"                     el resumen
 ```
+
+### Paso a paso
+
+1. Claude Code **termina** una tarea en tu ordenador
+2. El hook envia el resumen al **servidor**
+3. El servidor lo envia por **notificacion push** a tu movil
+4. Tu movil lo reenvia a tu **reloj** por Bluetooth
+5. Tu reloj **vibra** y muestra que hizo Claude
 
 ### Ejemplo practico
 
@@ -40,17 +48,18 @@ Le pides a Claude Code: *"Refactoriza el modulo de autenticacion y anade tests"*
 Claude trabaja durante unos minutos. Cuando termina, **tu reloj vibra** y muestra:
 
 ```
-     +--( )--+
-     |Claude |
-     |       |
-     |Sesion |
-     |       |
-     |Refacto|
-     |rizado |
-     |auth...|
-     |       |
-     |  [OK] |
-     +-------+
+         .───────.
+        /  12  1  \
+       │ 11    2   │
+       │10  .   3  │      ╔═══════════════════════╗
+       │ 9    4    │  ==>  ║  Claude: Sesion        ║
+        \ 8  5  6 /       ║                         ║
+         '───────'        ║  Refactorizado modulo   ║
+          ╱    ╲          ║  de auth y anadidos 5   ║
+     Tu reloj vibra       ║  tests unitarios        ║
+                          ║                         ║
+                          ║        [ OK ]           ║
+                          ╚═══════════════════════╝
 ```
 
 Asi sabes que ya termino y que hizo, sin interrumpir lo que estuvieras haciendo.
@@ -76,13 +85,14 @@ Cada vez que Claude termina una sesion de trabajo, recibes:
 Cuando no hay resumenes recientes:
 
 ```
-    +-----------------+
-    |                 |
-    |  Claude Watch   |
-    |  Esperando      |
-    |  resumenes...   |
-    |                 |
-    +-----------------+
+    ╔═══════════════════╗
+    ║                   ║
+    ║   Claude Watch    ║
+    ║                   ║
+    ║   Esperando       ║
+    ║   resumenes...    ║
+    ║                   ║
+    ╚═══════════════════╝
 ```
 
 ### Cuando llega un resumen
@@ -90,19 +100,19 @@ Cuando no hay resumenes recientes:
 Tu reloj vibra suavemente y muestra:
 
 ```
-    +-----------------+
-    |     Claude      |
-    |                 |
-    |     Sesion      |
-    |                 |
-    | Refactorizado   |
-    | el modulo de    |
-    | autenticacion   |
-    | y anadidos 5    |
-    | tests unitarios |
-    |                 |
-    |     [OK]        |
-    +-----------------+
+    ╔═══════════════════╗
+    ║     Claude        ║
+    ║                   ║
+    ║     Sesion        ║
+    ║                   ║
+    ║  Refactorizado    ║
+    ║  el modulo de     ║
+    ║  autenticacion    ║
+    ║  y anadidos 5     ║
+    ║  tests unitarios  ║
+    ║                   ║
+    ║      [ OK ]       ║
+    ╚═══════════════════╝
 ```
 
 - **Titulo:** "Claude" + tipo de evento
@@ -155,17 +165,21 @@ Esto te permite **hacer otras cosas** mientras Claude trabaja, sabiendo que te a
 ## Componentes del sistema
 
 ```
-+------------------+     +------------------+     +------------------+
-|   Tu ordenador   |     |    Tu movil      |     |   Tu reloj       |
-|                  |     |    (Android)     |     |   (WearOS)       |
-|  Claude Code     | --> |  App puente      | --> |  Resumenes       |
-|  con notificador |     |  (segundo plano) |     |  de sesion       |
-+------------------+     +------------------+     +------------------+
+ ┌──────────────┐      ┌──────────────┐      ┌──────────────┐      ┌──────────────┐
+ │              │      │              │      │              │      │              │
+ │  ORDENADOR   │ ──── │   SERVIDOR   │ ──── │    MOVIL     │ ──── │    RELOJ     │
+ │              │      │              │      │              │      │              │
+ │  Claude Code │ POST │  FastAPI     │ FCM  │  App puente  │  BT  │  WearOS app  │
+ │  + Hook      │ ───> │  en la nube  │ ───> │  (2do plano) │ ───> │  Notificacion│
+ │              │      │              │      │              │      │              │
+ └──────────────┘      └──────────────┘      └──────────────┘      └──────────────┘
+       Tu PC              Internet           Tu bolsillo           Tu muneca
 ```
 
-1. **Ordenador:** Claude Code trabaja normalmente y al terminar envia un resumen
-2. **Movil:** Recibe el resumen y lo reenvia a tu reloj (tambien lo muestra como notificacion)
-3. **Reloj:** Donde tu ves que hizo Claude
+1. **Ordenador:** Claude Code trabaja y al terminar el hook envia un resumen al servidor
+2. **Servidor:** Recibe el resumen y lo envia como notificacion push (FCM) al movil
+3. **Movil:** Recibe la notificacion, la muestra, y la reenvia al reloj por Bluetooth
+4. **Reloj:** Vibra y muestra el resumen de lo que Claude hizo
 
 ---
 

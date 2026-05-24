@@ -9,14 +9,19 @@
 Claude Watch incluye **dos apps** que trabajan juntas:
 
 ```
-+-------------------+          +-------------------+
-|    App Movil      |  ---->   |    App Reloj      |
-|    (Android)      |          |    (WearOS)       |
-|                   |          |                   |
-|  Recibe resumenes |          |  Muestra los      |
-|  del servidor     |          |  resumenes        |
-|  y los reenvia    |          |                   |
-+-------------------+          +-------------------+
+  Desde el servidor (FCM push)
+         │
+         ▼
+  ┌─────────────────────┐       Bluetooth/WiFi       ┌─────────────────────┐
+  │                     │                             │                     │
+  │    APP MOVIL        │  ── Wearable Data Layer ──> │    APP RELOJ        │
+  │    (Android)        │                             │    (WearOS)         │
+  │                     │                             │                     │
+  │  - Recibe FCM push  │                             │  - Muestra resumen  │
+  │  - Muestra notif    │                             │  - Vibra            │
+  │  - Reenvia al reloj │                             │  - Notificacion     │
+  │                     │                             │                     │
+  └─────────────────────┘                             └─────────────────────┘
 ```
 
 ---
@@ -35,23 +40,31 @@ La app del movil es el **puente** entre el servidor y tu reloj. Hace dos cosas:
 Al abrir la app veras una pantalla simple con:
 
 ```
-+-----------------------------+
-|                             |
-|   Claude Watch              |
-|                             |
-|   URL del servidor          |
-|   [________________________]|
-|                             |
-|   Clave API                 |
-|   [________________________]|
-|                             |
-|   [ Guardar Configuracion ] |
-|                             |
-|   [ Registrar Dispositivo ] |
-|                             |
-|   Estado: Registrado OK     |
-|                             |
-+-----------------------------+
+  ╔═════════════════════════════════╗
+  ║                                 ║
+  ║   Claude Watch                  ║
+  ║                                 ║
+  ║   URL del servidor              ║
+  ║   ┌───────────────────────────┐ ║
+  ║   │ https://claude-watch...   │ ║
+  ║   └───────────────────────────┘ ║
+  ║                                 ║
+  ║   Clave API                     ║
+  ║   ┌───────────────────────────┐ ║
+  ║   │ ************************  │ ║
+  ║   └───────────────────────────┘ ║
+  ║                                 ║
+  ║   ┌───────────────────────────┐ ║
+  ║   │   Guardar Configuracion   │ ║
+  ║   └───────────────────────────┘ ║
+  ║                                 ║
+  ║   ┌───────────────────────────┐ ║
+  ║   │   Registrar Dispositivo   │ ║
+  ║   └───────────────────────────┘ ║
+  ║                                 ║
+  ║   Estado: Registrado OK         ║
+  ║                                 ║
+  ╚═════════════════════════════════╝
 ```
 
 ### Configuracion paso a paso
@@ -82,16 +95,14 @@ Es donde ves los **resumenes** de lo que Claude Code hizo.
 Cuando no hay resumenes recientes:
 
 ```
-     +--( )--+
-     |       |
-     | Claude|
-     | Watch |
-     |       |
-     |Esperan|
-     |do     |
-     |resume-|
-     |nes... |
-     +-------+
+        .───────.
+       / Claude  \
+      │  Watch    │
+      │           │
+      │ Esperando │
+      │ resumenes │
+       \  ...    /
+        '───────'
 ```
 
 ### Pantalla de resumen
@@ -99,18 +110,16 @@ Cuando no hay resumenes recientes:
 Cuando llega un resumen, tu reloj vibra y muestra:
 
 ```
-     +--( )--+
-     |Claude |
-     |       |
-     |Sesion |
-     |       |
-     |Refacto|
-     |rizado |
-     |auth y |
-     |tests..|
-     |       |
-     | [OK]  |
-     +-------+
+        .───────.
+       /  Claude  \
+      │   Sesion   │
+      │            │
+      │ Refactori- │
+      │ zado auth  │
+      │ y tests    │
+      │            │
+       \  [ OK ]  /
+        '───────'
 ```
 
 - **Arriba:** "Claude" (origen del resumen)

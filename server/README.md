@@ -13,16 +13,23 @@ El servidor es el **puente** entre Claude Code (en tu ordenador) y las apps de t
 3. **Gestionar dispositivos** — Sabe a que moviles enviar las notificaciones
 
 ```
-Tu ordenador                    Tus dispositivos
-     |                                |
-     |   "Claude ha terminado.        |
-     |    Resumen: Refactorizado..."  |
-     |          |                      |
-     +--------> SERVIDOR >----------->+
-                                      |
-                                 Te llega el
-                                 resumen al
-                                 reloj y movil
+  ┌──────────────┐                              ┌──────────────┐
+  │              │    POST /notify               │              │
+  │  Tu          │    "Claude ha terminado.      │  Tu movil    │
+  │  ordenador   │     Resumen: Refactorizado    │  + reloj     │
+  │              │     modulo de auth..."         │              │
+  │  (Hook)      │                               │              │
+  └──────┬───────┘                               └──────▲───────┘
+         │                                              │
+         │         ┌──────────────────────┐             │
+         │         │                      │             │
+         └────────>│     SERVIDOR         │─────────────┘
+                   │                      │  Notificacion
+                   │  1. Recibe resumen   │  push (FCM)
+                   │  2. Busca devices    │
+                   │  3. Envia FCM push   │
+                   │                      │
+                   └──────────────────────┘
 ```
 
 ---

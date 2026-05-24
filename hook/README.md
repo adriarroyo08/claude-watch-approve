@@ -9,14 +9,40 @@
 Cuando Claude Code termina de trabajar, el hook envia automaticamente un resumen de lo que hizo a tu reloj. No interviene durante el trabajo de Claude — solo al final.
 
 ```
-Claude trabaja normalmente
-         |
-   Claude termina
-         |
-   Envia resumen
-   a tu reloj
-         |
-   Tu ves que hizo
+  ┌─────────────────────────────────────────────┐
+  │             Claude Code trabajando           │
+  │                                              │
+  │   Editando archivos, ejecutando comandos,    │
+  │   escribiendo tests, refactorizando...       │
+  │                                              │
+  └──────────────────┬──────────────────────────┘
+                     │
+                     ▼
+          ┌─────────────────────┐
+          │  Claude termina     │
+          │  la tarea           │
+          └──────────┬──────────┘
+                     │
+                     ▼
+          ┌─────────────────────┐
+          │  Hook se activa     │
+          │  automaticamente    │
+          └──────────┬──────────┘
+                     │
+                     ▼
+          ┌─────────────────────┐
+          │  Envia resumen      │
+          │  POST /notify       │
+          │  al servidor        │
+          └──────────┬──────────┘
+                     │
+                     ▼
+          ┌─────────────────────┐
+          │  Servidor → Movil   │
+          │  → Reloj            │
+          │                     │
+          │  Tu ves que hizo    │
+          └─────────────────────┘
 ```
 
 ---
