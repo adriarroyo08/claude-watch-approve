@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Header, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from server.config import API_KEY, DB_PATH
 from server.database import ApprovalDB
@@ -16,13 +16,13 @@ def verify_api_key(x_api_key: str = Header()):
 
 
 class NotifyRequest(BaseModel):
-    tool_name: str
-    summary: str
-    result: str | None = None
+    tool_name: str = Field(..., max_length=200)
+    summary: str = Field(..., max_length=2000)
+    result: str | None = Field(default=None, max_length=5000)
 
 
 class DeviceRegistration(BaseModel):
-    fcm_token: str
+    fcm_token: str = Field(..., min_length=10, max_length=500)
 
 
 @app.post("/notify", status_code=201)
