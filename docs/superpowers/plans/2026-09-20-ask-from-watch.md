@@ -1580,7 +1580,7 @@ job_manager = JobManager(db=db)
 def verify_api_key(x_api_key: str = Header()):
     """Clave del hook: solo abre /notify y /register-device."""
     if not hmac.compare_digest(x_api_key, API_KEY):
-        raise HTTPException(status_code=403, detail="Invalid API key")
+        raise HTTPException(status_code=403, detail="Clave no valida")
 
 
 def verify_ask_key(x_api_key: str = Header()):
@@ -1590,13 +1590,13 @@ def verify_ask_key(x_api_key: str = Header()):
     revocando una sola, sin tocar las notificaciones.
     """
     if not hmac.compare_digest(x_api_key, ASK_KEY):
-        raise HTTPException(status_code=403, detail="Invalid API key")
+        raise HTTPException(status_code=403, detail="Clave no valida")
 
 
 def get_project(project_id: str):
     project = PROJECTS.get(project_id)
     if project is None:
-        raise HTTPException(status_code=404, detail="Unknown project")
+        raise HTTPException(status_code=404, detail="No existe ese proyecto")
     return project
 ```
 
@@ -1646,7 +1646,7 @@ def get_ask(job_id: str, x_api_key: str = Header()):
     verify_ask_key(x_api_key)
     job = db.get_job(job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="Unknown job")
+        raise HTTPException(status_code=404, detail="No existe ese trabajo")
     return {
         "status": job["status"],
         "short": job["short_text"],
@@ -1680,6 +1680,12 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 ---
 
 ## Task 8: Aprobar, cancelar y mandar al móvil por HTTP
+
+Convenio heredado de Task 7, que hay que respetar: la autenticación va como
+`dependencies=[Depends(verify_ask_key)]` en el decorador, **no** como una llamada
+a mano dentro del handler. Hay un test (`test_every_route_declares_an_auth_dependency`)
+que recorre las rutas y falla si alguna se queda sin guardia — está para que
+olvidarlo sea imposible, no improbable.
 
 **Files:**
 - Modify: `server/main.py`
@@ -1834,12 +1840,11 @@ Expected: FAIL con 404 en `/ask/{id}/approve` (la ruta no existe todavía)
 Añade al final de `server/main.py`:
 
 ```python
-@app.post("/ask/{job_id}/approve")
-async def approve_ask(job_id: str, x_api_key: str = Header()):
-    verify_ask_key(x_api_key)
+@app.post("/ask/{job_id}/approve", dependencies=[Depends(verify_ask_key)])
+async def approve_ask(job_id: str):
     job = db.get_job(job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="Unknown job")
+        raise HTTPException(status_code=404, detail="No existe ese trabajo")
     project = get_project(job["project_id"])
     try:
         await job_manager.approve(job_id, project)
@@ -1850,23 +1855,21 @@ async def approve_ask(job_id: str, x_api_key: str = Header()):
     return {"status": "running"}
 
 
-@app.post("/ask/{job_id}/cancel")
-async def cancel_ask(job_id: str, x_api_key: str = Header()):
-    verify_ask_key(x_api_key)
+@app.post("/ask/{job_id}/cancel", dependencies=[Depends(verify_ask_key)])
+async def cancel_ask(job_id: str):
     status = await job_manager.cancel(job_id)
     if status is None:
-        raise HTTPException(status_code=404, detail="Unknown job")
+        raise HTTPException(status_code=404, detail="No existe ese trabajo")
     # Devuelve el estado real: si el job ya habia terminado, no se cancelo
     # nada y el reloj no debe creerse lo contrario.
     return {"status": status}
 
 
-@app.post("/ask/{job_id}/to-phone")
-def send_ask_to_phone(job_id: str, x_api_key: str = Header()):
-    verify_ask_key(x_api_key)
+@app.post("/ask/{job_id}/to-phone", dependencies=[Depends(verify_ask_key)])
+def send_ask_to_phone(job_id: str):
     job = db.get_job(job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="Unknown job")
+        raise HTTPException(status_code=404, detail="No existe ese trabajo")
     if not job["full_text"]:
         raise HTTPException(status_code=409, detail="Todavia no hay respuesta")
     tokens = db.get_device_tokens()
