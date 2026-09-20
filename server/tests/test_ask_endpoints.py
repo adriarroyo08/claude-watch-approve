@@ -309,3 +309,216 @@ def test_startup_marks_orphaned_jobs_as_error():
     assert db.get_job("huerfano")["status"] == "running"
     _on_startup()
     assert db.get_job("huerfano")["status"] == "error"
+
+
+async def _submit_write_job(http, watch_headers, plan_result):
+    async def fake_runner(cmd, cwd, timeout):
+        return plan_result
+
+    with patch.object(job_manager, "_runner", fake_runner):
+        resp = await http.post(
+            "/ask",
+            json={"project_id": "ahorrapp", "prompt": "arregla el typo",
+                  "mode": "write", "thread": "new"},
+            headers=watch_headers,
+        )
+        await job_manager.wait_idle()
+    return resp.json()["job_id"]
+
+
+@pytest.mark.anyio
+async def test_write_job_reports_plan(watch_headers):
+    plan = RunResult(ok=True, short="Tocare 3 archivos.",
+                     full="Tocare 3 archivos.\n\nDetalle.", session_id="s-1")
+    async with client() as http:
+        job_id = await _submit_write_job(http, watch_headers, plan)
+        resp = await http.get(f"/ask/{job_id}", headers=watch_headers)
+    assert resp.json()["status"] == "awaiting_approval"
+    assert resp.json()["plan"] == "Tocare 3 archivos."
+
+
+@pytest.mark.anyio
+async def test_approve_runs_the_plan(watch_headers):
+    plan = RunResult(ok=True, short="Tocare 3 archivos.", full="Detalle.", session_id="s-1")
+
+    async def done_runner(cmd, cwd, timeout):
+        return RunResult(ok=True, short="Hecho.", full="Hecho.", session_id="s-1")
+
+    async with client() as http:
+        job_id = await _submit_write_job(http, watch_headers, plan)
+        with patch.object(job_manager, "_runner", done_runner):
+            resp = await http.post(f"/ask/{job_id}/approve", headers=watch_headers)
+            await job_manager.wait_idle()
+            final = await http.get(f"/ask/{job_id}", headers=watch_headers)
+
+    assert resp.status_code == 200
+    assert final.json()["status"] == "done"
+    assert final.json()["short"] == "Hecho."
+
+
+@pytest.mark.anyio
+async def test_approve_on_a_read_job_is_409(watch_headers):
+    async def fake_runner(cmd, cwd, timeout):
+        return RunResult(ok=True, short="ok", full="ok")
+
+    with patch.object(job_manager, "_runner", fake_runner):
+        async with client() as http:
+            resp = await http.post(
+                "/ask",
+                json={"project_id": "ahorrapp", "prompt": "que tal", "mode": "read", "thread": "new"},
+                headers=watch_headers,
+            )
+            job_id = resp.json()["job_id"]
+            await job_manager.wait_idle()
+            approve = await http.post(f"/ask/{job_id}/approve", headers=watch_headers)
+    assert approve.status_code == 409
+
+
+@pytest.mark.anyio
+async def test_approve_of_unknown_job_is_404(watch_headers):
+    async with client() as http:
+        resp = await http.post("/ask/no-existe/approve", headers=watch_headers)
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_approve_says_why_it_refused(watch_headers):
+    """En un reloj no puedes ir a mirar un log: el motivo tiene que viajar."""
+    async def fake_runner(cmd, cwd, timeout):
+        return RunResult(ok=True, short="ok", full="ok")
+
+    with patch.object(job_manager, "_runner", fake_runner):
+        async with client() as http:
+            resp = await http.post(
+                "/ask",
+                json={"project_id": "ahorrapp", "prompt": "que tal", "mode": "read", "thread": "new"},
+                headers=watch_headers,
+            )
+            job_id = resp.json()["job_id"]
+            await job_manager.wait_idle()
+            approve = await http.post(f"/ask/{job_id}/approve", headers=watch_headers)
+    assert "esperando aprobacion" in approve.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_approve_needs_the_watch_key(hook_headers):
+    async with client() as http:
+        resp = await http.post("/ask/cualquiera/approve", headers=hook_headers)
+    assert resp.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_cancel_marks_it_cancelled(watch_headers):
+    import asyncio
+    gate = asyncio.Event()
+
+    async def slow_runner(cmd, cwd, timeout):
+        await gate.wait()
+        return RunResult(ok=True, short="ok", full="ok")
+
+    with patch.object(job_manager, "_runner", slow_runner):
+        async with client() as http:
+            resp = await http.post(
+                "/ask",
+                json={"project_id": "ahorrapp", "prompt": "que tal", "mode": "read", "thread": "new"},
+                headers=watch_headers,
+            )
+            job_id = resp.json()["job_id"]
+            await asyncio.sleep(0)
+            cancel = await http.post(f"/ask/{job_id}/cancel", headers=watch_headers)
+            assert cancel.status_code == 200
+            assert cancel.json()["status"] == "cancelled"
+            gate.set()
+            final = await http.get(f"/ask/{job_id}", headers=watch_headers)
+    assert final.json()["status"] == "cancelled"
+
+
+@pytest.mark.anyio
+async def test_cancel_does_not_lie_about_a_finished_job(watch_headers):
+    """Lo peor que puede decir esto: 'cancelado' de algo ya hecho en disco."""
+    async def fake_runner(cmd, cwd, timeout):
+        return RunResult(ok=True, short="Hecho.", full="Hecho.")
+
+    with patch.object(job_manager, "_runner", fake_runner):
+        async with client() as http:
+            resp = await http.post(
+                "/ask",
+                json={"project_id": "ahorrapp", "prompt": "que tal", "mode": "read", "thread": "new"},
+                headers=watch_headers,
+            )
+            job_id = resp.json()["job_id"]
+            await job_manager.wait_idle()
+            cancel = await http.post(f"/ask/{job_id}/cancel", headers=watch_headers)
+            final = await http.get(f"/ask/{job_id}", headers=watch_headers)
+
+    assert cancel.status_code == 200
+    assert cancel.json()["status"] == "done"
+    assert final.json()["status"] == "done"
+    assert final.json()["short"] == "Hecho."
+
+
+@pytest.mark.anyio
+async def test_cancel_of_unknown_job_is_404(watch_headers):
+    async with client() as http:
+        resp = await http.post("/ask/no-existe/cancel", headers=watch_headers)
+    assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_to_phone_sends_the_full_text(watch_headers, hook_headers):
+    async def fake_runner(cmd, cwd, timeout):
+        return RunResult(ok=True, short="Corto.", full="Corto.\n\nTodo el detalle.")
+
+    with patch.object(job_manager, "_runner", fake_runner):
+        async with client() as http:
+            await http.post(
+                "/register-device",
+                json={"fcm_token": "device-token-xyz"},
+                headers=hook_headers,
+            )
+            resp = await http.post(
+                "/ask",
+                json={"project_id": "ahorrapp", "prompt": "que tal", "mode": "read", "thread": "new"},
+                headers=watch_headers,
+            )
+            job_id = resp.json()["job_id"]
+            await job_manager.wait_idle()
+            with patch("server.main.send_info_notification", return_value=True) as mock_send:
+                sent = await http.post(f"/ask/{job_id}/to-phone", headers=watch_headers)
+
+    assert sent.status_code == 200
+    mock_send.assert_called_once_with(
+        tokens=["device-token-xyz"],
+        tool_name="Respuesta",
+        message="Corto.\n\nTodo el detalle.",
+    )
+
+
+@pytest.mark.anyio
+async def test_to_phone_on_unfinished_job_is_409(watch_headers):
+    import asyncio
+    gate = asyncio.Event()
+
+    async def slow_runner(cmd, cwd, timeout):
+        await gate.wait()
+        return RunResult(ok=True, short="ok", full="ok")
+
+    with patch.object(job_manager, "_runner", slow_runner):
+        async with client() as http:
+            resp = await http.post(
+                "/ask",
+                json={"project_id": "ahorrapp", "prompt": "que tal", "mode": "read", "thread": "new"},
+                headers=watch_headers,
+            )
+            job_id = resp.json()["job_id"]
+            sent = await http.post(f"/ask/{job_id}/to-phone", headers=watch_headers)
+            assert sent.status_code == 409
+        gate.set()
+        await job_manager.wait_idle()
+
+
+@pytest.mark.anyio
+async def test_to_phone_of_unknown_job_is_404(watch_headers):
+    async with client() as http:
+        resp = await http.post("/ask/no-existe/to-phone", headers=watch_headers)
+    assert resp.status_code == 404

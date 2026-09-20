@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from server.config import API_KEY, ASK_KEY, DB_PATH, PROJECTS
 from server.database import ApprovalDB
 from server.fcm import send_info_notification
-from server.jobs import Busy, JobManager, RateLimited
+from server.jobs import Busy, JobManager, NotApprovable, RateLimited
 
 db = ApprovalDB(DB_PATH)
 job_manager = JobManager(db=db)
@@ -161,3 +161,53 @@ def get_ask(job_id: str):
         "plan": job["plan"],
         "error": job["error"],
     }
+
+
+@app.post("/ask/{job_id}/approve", dependencies=[Depends(verify_ask_key)])
+async def approve_ask(job_id: str):
+    """Ejecuta un plan que la persona ha aprobado en el reloj.
+
+    Es el unico endpoint de este servidor que puede modificar archivos.
+    El proyecto sale de la fila, no del cliente: aprobar un plan de un repo
+    dentro de otro es exactamente lo que no puede pasar.
+    """
+    job = db.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="No existe ese trabajo")
+    project = get_project(job["project_id"])
+    try:
+        await job_manager.approve(job_id, project)
+    except NotApprovable as exc:
+        raise HTTPException(status_code=409, detail=exc.reason)
+    except Busy:
+        raise HTTPException(status_code=409, detail="Hay una consulta en marcha")
+    return {"status": "running"}
+
+
+@app.post("/ask/{job_id}/cancel", dependencies=[Depends(verify_ask_key)])
+async def cancel_ask(job_id: str):
+    status = await job_manager.cancel(job_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail="No existe ese trabajo")
+    # Devuelve el estado real: si el job ya habia terminado no se cancelo
+    # nada, y el reloj no debe creerse lo contrario.
+    return {"status": status}
+
+
+@app.post("/ask/{job_id}/to-phone", dependencies=[Depends(verify_ask_key)])
+def send_ask_to_phone(job_id: str):
+    job = db.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="No existe ese trabajo")
+    if not job["full_text"]:
+        raise HTTPException(status_code=409, detail="Todavia no hay respuesta")
+    tokens = db.get_device_tokens()
+    try:
+        send_info_notification(
+            tokens=tokens,
+            tool_name="Respuesta",
+            message=job["full_text"],
+        )
+    except Exception:
+        pass
+    return {"status": "sent", "devices": len(tokens)}
