@@ -33,3 +33,18 @@ def test_empty_string_gives_no_projects():
 def test_strips_whitespace():
     projects = parse_projects("  ahorrapp : /home/ubuntu/AhorrApp  ")
     assert projects["ahorrapp"].path == "/home/ubuntu/AhorrApp"
+
+
+def test_ignores_relative_paths():
+    projects = parse_projects("malo:AhorrApp;bueno:/home/ubuntu/AhorrApp")
+    assert list(projects) == ["bueno"]
+
+
+def test_duplicate_id_keeps_the_last_one():
+    projects = parse_projects("ahorrapp:/uno;ahorrapp:/dos")
+    assert projects["ahorrapp"].path == "/dos"
+
+
+def test_ignores_entry_without_separator():
+    projects = parse_projects("justanid;bueno:/home/ubuntu/AhorrApp")
+    assert list(projects) == ["bueno"]

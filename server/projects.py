@@ -15,7 +15,10 @@ def parse_projects(raw: str) -> dict[str, Project]:
     El nombre visible sale del ultimo segmento de la ruta, asi que la
     configuracion no tiene que repetirlo. Las entradas mal formadas se
     ignoran en silencio: una linea rota en la config no debe impedir
-    que arranque el servidor.
+    que arranque el servidor. Solo se aceptan rutas absolutas para evitar
+    que paths relativos se resuelvan contra el working directory del
+    servidor en tiempo de ejecucion. Cuando un id se repite, se mantiene
+    la ultima entrada.
     """
     projects: dict[str, Project] = {}
     for entry in raw.split(";"):
@@ -23,6 +26,8 @@ def parse_projects(raw: str) -> dict[str, Project]:
         project_id = project_id.strip()
         path = path.strip()
         if not project_id or not path:
+            continue
+        if not Path(path).is_absolute():
             continue
         projects[project_id] = Project(
             id=project_id,
