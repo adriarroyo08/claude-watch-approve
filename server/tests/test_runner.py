@@ -42,7 +42,12 @@ def test_read_command_has_no_permission_mode():
 def test_plan_command_uses_plan_mode():
     cmd = build_command("plan", "arregla el typo")
     assert _flag_values(cmd, "--permission-mode") == ["plan"]
-    assert "--allowedTools" not in cmd
+    tools = _flag_values(cmd, "--tools")
+    assert tools == ["Read,Grep,Glob,Bash"]
+    allowed = _flag_values(cmd, "--allowedTools")
+    assert "Read" in allowed
+    assert "Edit" not in allowed
+    assert "Write" not in allowed
 
 
 def test_exec_command_accepts_edits_and_denies_dangerous_tools():
@@ -70,6 +75,26 @@ def test_every_phase_appends_brevity_prompt():
 def test_unknown_phase_raises():
     with pytest.raises(ValueError):
         build_command("borrarlo-todo", "hola")
+
+
+def test_every_phase_is_restricted():
+    """Sin --restricted, claude hereda los permisos globales del usuario."""
+    for phase in ("read", "plan", "exec"):
+        assert "--restricted" in build_command(phase, "hola", session_id="s-1")
+
+
+def test_read_and_plan_phases_have_no_writing_tools():
+    for phase in ("read", "plan"):
+        tools = _flag_values(build_command(phase, "hola"), "--tools")[0]
+        assert "Write" not in tools
+        assert "Edit" not in tools
+        assert "Read" in tools
+
+
+def test_exec_phase_can_write():
+    tools = _flag_values(build_command("exec", "hola", session_id="s-1"), "--tools")[0]
+    assert "Edit" in tools
+    assert "Write" in tools
 
 
 def test_split_answer_uses_first_paragraph_as_short():

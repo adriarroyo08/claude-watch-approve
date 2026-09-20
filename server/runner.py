@@ -40,6 +40,16 @@ EXEC_DENIED_TOOLS = (
     "WebFetch",
 )
 
+# LIMITE DE SEGURIDAD. --tools define que herramientas EXISTEN; --allowedTools
+# solo dice cuales no preguntan. Solo lo primero es una lista blanca de verdad:
+# medido contra el CLI real, la fase de lectura creaba archivos hasta que se
+# uso --tools.
+READ_PHASE_TOOLS = "Read,Grep,Glob,Bash"
+
+# La fase exec si necesita escribir, pero solo eso: nada de WebFetch ni de
+# herramientas que ejecuten codigo mas alla de Bash, que ya va con lista negra.
+EXEC_PHASE_TOOLS = "Read,Grep,Glob,Bash,Edit,Write"
+
 SHORT_MAX = 200
 
 
@@ -48,7 +58,12 @@ def build_command(
     prompt: str,
     session_id: str | None = None,
 ) -> list[str]:
-    """Construye el comando para una fase: 'read', 'plan' o 'exec'."""
+    """Construye el comando para una fase: 'read', 'plan' o 'exec'.
+
+    --restricted no es opcional: sin el, claude carga ~/.claude/settings.json,
+    que en esta maquina concede Write, Edit y Bash a todo. Medido: la fase de
+    lectura creaba archivos en disco hasta que se anadio.
+    """
     cmd = [
         CLAUDE_BIN,
         "-p",
@@ -61,13 +76,16 @@ def build_command(
         ASK_MODEL,
         "--append-system-prompt",
         BREVITY_PROMPT,
+        "--restricted",
     ]
 
     if phase == "read":
-        cmd += ["--allowedTools", *READ_TOOLS]
+        cmd += ["--tools", READ_PHASE_TOOLS, "--allowedTools", *READ_TOOLS]
     elif phase == "plan":
+        cmd += ["--tools", READ_PHASE_TOOLS, "--allowedTools", *READ_TOOLS]
         cmd += ["--permission-mode", "plan"]
     elif phase == "exec":
+        cmd += ["--tools", EXEC_PHASE_TOOLS]
         cmd += ["--permission-mode", "acceptEdits"]
         cmd += ["--disallowedTools", *EXEC_DENIED_TOOLS]
     else:
