@@ -3,7 +3,12 @@ from server.runner import build_command, split_answer
 
 
 def _flag_values(cmd, flag):
-    """Devuelve los valores que siguen a un flag hasta el siguiente flag."""
+    """Devuelve los valores que siguen a un flag hasta el siguiente flag.
+
+    Ojo: corta en el primer elemento que empiece por "--", asi que no sirve
+    para leer un valor que pueda empezar asi (por ejemplo el prompt del
+    usuario). Para eso, trocea el comando directamente.
+    """
     start = cmd.index(flag) + 1
     values = []
     for item in cmd[start:]:
@@ -56,9 +61,10 @@ def test_resume_only_when_session_given():
 
 
 def test_every_phase_appends_brevity_prompt():
+    from server.runner import BREVITY_PROMPT
     for phase in ("read", "plan", "exec"):
         cmd = build_command(phase, "hola", session_id="s-1")
-        assert "--append-system-prompt" in cmd
+        assert _flag_values(cmd, "--append-system-prompt") == [BREVITY_PROMPT]
 
 
 def test_unknown_phase_raises():
@@ -86,3 +92,9 @@ def test_split_answer_truncates_long_first_paragraph():
 
 def test_split_answer_empty():
     assert split_answer("   ") == ("", "")
+
+
+def test_split_answer_handles_windows_line_endings():
+    short, full = split_answer("Corto.\r\n\r\nEl detalle largo.")
+    assert short == "Corto."
+    assert full == "Corto.\n\nEl detalle largo."

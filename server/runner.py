@@ -1,3 +1,5 @@
+from typing import Literal
+
 from server.config import ASK_MODEL, CLAUDE_BIN
 
 BREVITY_PROMPT = (
@@ -6,30 +8,41 @@ BREVITY_PROMPT = (
     "detalle si lo hay. Sin markdown ni tablas: esto se lee en un reloj."
 )
 
+# Lo consume jobs.py al aprobar un plan: se pasa como prompt de la fase exec.
 EXEC_PROMPT = "Ejecuta el plan que acabas de describir."
 
-READ_TOOLS = [
+# LIMITE DE SEGURIDAD. Esta lista es lo unico que impide que el modo lectura
+# escriba: con --permission-prompts none, cualquier herramienta que no este
+# aqui se deniega sola. Ampliarla es una decision deliberada, no un retoque.
+READ_TOOLS = (
     "Read",
     "Grep",
     "Glob",
     "Bash(git log:*)",
     "Bash(git diff:*)",
     "Bash(git status:*)",
-]
+)
 
-EXEC_DENIED_TOOLS = [
+# LIMITE DE SEGURIDAD. Segundo cinturon de la fase exec, que corre sin
+# vigilancia despues de que apruebes en el reloj. Recortarla es una decision
+# deliberada: esta maquina sostiene el tunel de cloudflared y 19 contenedores.
+EXEC_DENIED_TOOLS = (
     "Bash(git push:*)",
     "Bash(sudo:*)",
     "Bash(systemctl:*)",
     "Bash(docker:*)",
     "Bash(rm:*)",
     "WebFetch",
-]
+)
 
 SHORT_MAX = 200
 
 
-def build_command(phase: str, prompt: str, session_id: str | None = None) -> list[str]:
+def build_command(
+    phase: Literal["read", "plan", "exec"],
+    prompt: str,
+    session_id: str | None = None,
+) -> list[str]:
     """Construye el comando para una fase: 'read', 'plan' o 'exec'."""
     cmd = [
         CLAUDE_BIN,
@@ -68,7 +81,7 @@ def split_answer(text: str) -> tuple[str, str]:
     detalle. Si Claude no hace caso, la corta son los primeros 200 caracteres:
     degradar mal es peor que degradar feo.
     """
-    full = text.strip()
+    full = text.replace("\r\n", "\n").strip()
     if not full:
         return "", ""
     head, separator, _ = full.partition("\n\n")
