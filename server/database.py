@@ -93,8 +93,18 @@ class ApprovalDB:
         self._conn.commit()
 
     def count_jobs_since(self, iso_timestamp: str) -> int:
+        """Cuenta los jobs creados desde ese instante.
+
+        Normaliza a UTC antes de comparar: las marcas se guardan como texto
+        y una comparacion de cadenas con otro huso daria un resultado
+        silenciosamente equivocado.
+        """
+        since = datetime.fromisoformat(iso_timestamp)
+        if since.tzinfo is None:
+            since = since.replace(tzinfo=timezone.utc)
         row = self._conn.execute(
-            "SELECT COUNT(*) AS n FROM jobs WHERE created_at >= ?", (iso_timestamp,)
+            "SELECT COUNT(*) AS n FROM jobs WHERE created_at >= ?",
+            (since.astimezone(timezone.utc).isoformat(),),
         ).fetchone()
         return row["n"]
 

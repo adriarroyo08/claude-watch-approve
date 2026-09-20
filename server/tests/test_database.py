@@ -90,6 +90,21 @@ def test_count_jobs_since(db):
     assert db.count_jobs_since(future.isoformat()) == 0
 
 
+def test_count_jobs_since_normalises_other_offsets(db):
+    db.create_job("job-1", project_id="ahorrapp", mode="read", prompt="una")
+    # El mismo instante que "hace una hora", escrito en +02:00
+    past_utc = datetime.now(timezone.utc) - timedelta(hours=1)
+    past_in_madrid = past_utc.astimezone(timezone(timedelta(hours=2)))
+    assert past_in_madrid.isoformat() != past_utc.isoformat()
+    assert db.count_jobs_since(past_in_madrid.isoformat()) == 1
+
+
+def test_count_jobs_since_treats_naive_as_utc(db):
+    db.create_job("job-1", project_id="ahorrapp", mode="read", prompt="una")
+    past = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(tzinfo=None)
+    assert db.count_jobs_since(past.isoformat()) == 1
+
+
 def test_thread_roundtrip(db):
     assert db.get_thread("ahorrapp") is None
     db.set_thread("ahorrapp", "session-abc")
