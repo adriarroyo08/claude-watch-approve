@@ -152,6 +152,15 @@ async def test_run_claude_reports_unreadable_output(tmp_path):
 
 
 @pytest.mark.anyio
+async def test_run_claude_rejects_json_that_is_not_an_object(tmp_path):
+    script = _fake_claude("echo '[1, 2, 3]'\n")
+    result = await run_claude([script], cwd=str(tmp_path), timeout=10)
+    os.unlink(script)
+    assert result.ok is False
+    assert "ilegible" in result.error
+
+
+@pytest.mark.anyio
 async def test_run_claude_times_out_and_kills(tmp_path):
     script = _fake_claude("sleep 30\n")
     result = await run_claude([script], cwd=str(tmp_path), timeout=1)

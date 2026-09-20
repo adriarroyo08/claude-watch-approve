@@ -123,6 +123,10 @@ async def run_claude(cmd: list[str], cwd: str, timeout: int) -> RunResult:
             cwd=cwd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            # No quitar: sin sesion propia no se puede matar el grupo, y un
+            # kill() al proceso principal deja vivos a los hijos que claude
+            # haya lanzado, que mantienen los pipes abiertos y cuelgan el
+            # wait() indefinidamente. Medido: 1s con killpg, >9s sin el.
             start_new_session=True,
         )
     except OSError as exc:
@@ -149,6 +153,9 @@ async def run_claude(cmd: list[str], cwd: str, timeout: int) -> RunResult:
     try:
         payload = json.loads(stdout.decode(errors="replace"))
     except json.JSONDecodeError:
+        return RunResult(ok=False, error="Respuesta ilegible de claude")
+
+    if not isinstance(payload, dict):
         return RunResult(ok=False, error="Respuesta ilegible de claude")
 
     text = payload.get("result") or ""
