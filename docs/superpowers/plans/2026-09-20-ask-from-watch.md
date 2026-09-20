@@ -1274,22 +1274,40 @@ Añade la excepción junto a las otras dos:
 ```python
 class NotApprovable(Exception):
     """Ese job no esta esperando aprobacion, o ya ha caducado."""
+
+    def __init__(self, reason: str = "Ese plan ya no se puede aprobar"):
+        super().__init__(reason)
+        self.reason = reason
 ```
 
 Y añade estos dos métodos a `JobManager`:
 
 ```python
     async def approve(self, job_id: str, project: Project) -> None:
+        """Ejecuta un plan ya aprobado por la persona.
+
+        Es el unico camino por el que este servidor modifica nada: hasta
+        aqui, la fase plan solo ha mirado.
+        """
+        # Igual que en submit: de aqui a create_task no puede haber ningun
+        # await, o dos aprobaciones simultaneas programarian dos fases exec
+        # sobre el mismo plan.
         job = self._db.get_job(job_id)
-        if job is None or job["status"] != "awaiting_approval":
-            raise NotApprovable()
+        if job is None:
+            raise NotApprovable("No existe ese trabajo")
+        if job["status"] != "awaiting_approval":
+            raise NotApprovable("Ese plan ya no esta esperando aprobacion")
+        if project.id != job["project_id"]:
+            # El cwd sale de este project, no de la fila. Aprobar un plan de
+            # un repo dentro de otro es exactamente lo que no puede pasar.
+            raise NotApprovable("Ese plan es de otro proyecto")
 
         age = datetime.now(timezone.utc) - datetime.fromisoformat(job["updated_at"])
         if age > timedelta(seconds=APPROVAL_TTL_SECONDS):
             self._db.update_job(
                 job_id, status="cancelled", error="El plan caduco sin aprobar"
             )
-            raise NotApprovable()
+            raise NotApprovable("El plan caduco sin aprobar")
 
         if self.busy:
             raise Busy()
@@ -1300,12 +1318,30 @@ Y añade estos dos métodos a `JobManager`:
             self._run(job_id, project, "exec", EXEC_PROMPT, job["session_id"])
         )
 
-    async def cancel(self, job_id: str) -> None:
-        if self._current_job_id == job_id and self._task is not None:
+    # Estados desde los que todavia tiene sentido cancelar.
+    _CANCELLABLE = ("running", "awaiting_approval")
+
+    async def cancel(self, job_id: str) -> str | None:
+        """Para un job y devuelve el estado en que queda, o None si no existe.
+
+        No pisa un resultado ya escrito. Si el job termino entre que pulsaste
+        Cancelar y que llego la peticion, el reloj debe ver 'done', no una
+        mentira: con acceptEdits los archivos ya estaban tocados y decir
+        'cancelado' seria mentir sobre el disco.
+        """
+        job = self._db.get_job(job_id)
+        if job is None:
+            return None
+        if job["status"] not in self._CANCELLABLE:
+            return job["status"]
+
+        if self._current_job_id == job_id and self.busy and self._task is not None:
             self._task.cancel()
             self._task = None
             self._current_job_id = None
+
         self._db.update_job(job_id, status="cancelled")
+        return "cancelled"
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -1817,10 +1853,12 @@ async def approve_ask(job_id: str, x_api_key: str = Header()):
 @app.post("/ask/{job_id}/cancel")
 async def cancel_ask(job_id: str, x_api_key: str = Header()):
     verify_ask_key(x_api_key)
-    if db.get_job(job_id) is None:
+    status = await job_manager.cancel(job_id)
+    if status is None:
         raise HTTPException(status_code=404, detail="Unknown job")
-    await job_manager.cancel(job_id)
-    return {"status": "cancelled"}
+    # Devuelve el estado real: si el job ya habia terminado, no se cancelo
+    # nada y el reloj no debe creerse lo contrario.
+    return {"status": status}
 
 
 @app.post("/ask/{job_id}/to-phone")
