@@ -102,18 +102,19 @@ def test_split_answer_handles_windows_line_endings():
 
 import json
 import os
-import stat
-import tempfile
 from server.runner import run_claude
 
 
-def _fake_claude(body: str) -> str:
-    """Crea un ejecutable que imita a claude y devuelve su ruta."""
-    fd, path = tempfile.mkstemp(suffix=".sh")
-    with os.fdopen(fd, "w") as handle:
-        handle.write("#!/bin/sh\n" + body)
-    os.chmod(path, os.stat(path).st_mode | stat.S_IEXEC)
-    return path
+def _fake_claude(tmp_path, body: str) -> str:
+    """Crea un ejecutable que imita a claude bajo tmp_path.
+
+    Va en tmp_path a proposito: pytest lo limpia pase lo que pase, incluso
+    si run_claude lanza o se cuelga, que es justo lo que estos tests cazan.
+    """
+    script = tmp_path / "fake-claude.sh"
+    script.write_text("#!/bin/sh\n" + body)
+    script.chmod(0o755)
+    return str(script)
 
 
 @pytest.mark.anyio
@@ -124,9 +125,8 @@ async def test_run_claude_parses_successful_json(tmp_path):
         "is_error": False,
         "permission_denials": [],
     })
-    script = _fake_claude(f"cat <<'JSON'\n{payload}\nJSON\n")
+    script = _fake_claude(tmp_path, f"cat <<'JSON'\n{payload}\nJSON\n")
     result = await run_claude([script], cwd=str(tmp_path), timeout=10)
-    os.unlink(script)
     assert result.ok is True
     assert result.short == "Corto."
     assert result.full == "Corto.\n\nLargo."
@@ -135,38 +135,48 @@ async def test_run_claude_parses_successful_json(tmp_path):
 
 @pytest.mark.anyio
 async def test_run_claude_reports_nonzero_exit(tmp_path):
-    script = _fake_claude("echo 'algo fue mal' >&2\nexit 1\n")
+    script = _fake_claude(tmp_path, "echo 'algo fue mal' >&2\nexit 1\n")
     result = await run_claude([script], cwd=str(tmp_path), timeout=10)
-    os.unlink(script)
     assert result.ok is False
     assert "algo fue mal" in result.error
 
 
 @pytest.mark.anyio
 async def test_run_claude_reports_unreadable_output(tmp_path):
-    script = _fake_claude("echo 'esto no es json'\n")
+    script = _fake_claude(tmp_path, "echo 'esto no es json'\n")
     result = await run_claude([script], cwd=str(tmp_path), timeout=10)
-    os.unlink(script)
     assert result.ok is False
     assert "ilegible" in result.error
 
 
 @pytest.mark.anyio
 async def test_run_claude_rejects_json_that_is_not_an_object(tmp_path):
-    script = _fake_claude("echo '[1, 2, 3]'\n")
+    script = _fake_claude(tmp_path, "echo '[1, 2, 3]'\n")
     result = await run_claude([script], cwd=str(tmp_path), timeout=10)
-    os.unlink(script)
     assert result.ok is False
     assert "ilegible" in result.error
 
 
 @pytest.mark.anyio
 async def test_run_claude_times_out_and_kills(tmp_path):
-    script = _fake_claude("sleep 30\n")
+    script = _fake_claude(tmp_path, "sleep 30\n")
     result = await run_claude([script], cwd=str(tmp_path), timeout=1)
-    os.unlink(script)
     assert result.ok is False
     assert "demasiado" in result.error
+
+
+@pytest.mark.anyio
+async def test_run_claude_kills_the_child_when_cancelled(tmp_path):
+    import asyncio as aio
+    script = _fake_claude(tmp_path, "sleep 30\n")
+    task = aio.create_task(run_claude([script], cwd=str(tmp_path), timeout=60))
+    await aio.sleep(0.3)          # deja que arranque de verdad
+    task.cancel()
+    with pytest.raises(aio.CancelledError):
+        await task
+    await aio.sleep(0.3)          # deja que el kill surta efecto
+    survivors = os.popen("pgrep -x sleep").read().strip()
+    assert survivors == "", f"quedo un proceso vivo: {survivors}"
 
 
 @pytest.mark.anyio
@@ -177,9 +187,8 @@ async def test_run_claude_honours_is_error_flag(tmp_path):
         "is_error": True,
         "permission_denials": [],
     })
-    script = _fake_claude(f"cat <<'JSON'\n{payload}\nJSON\n")
+    script = _fake_claude(tmp_path, f"cat <<'JSON'\n{payload}\nJSON\n")
     result = await run_claude([script], cwd=str(tmp_path), timeout=10)
-    os.unlink(script)
     assert result.ok is False
     assert result.error == "se acabo el credito"
 
@@ -192,8 +201,54 @@ async def test_run_claude_records_permission_denials(tmp_path):
         "is_error": False,
         "permission_denials": [{"tool_name": "Edit"}],
     })
-    script = _fake_claude(f"cat <<'JSON'\n{payload}\nJSON\n")
+    script = _fake_claude(tmp_path, f"cat <<'JSON'\n{payload}\nJSON\n")
     result = await run_claude([script], cwd=str(tmp_path), timeout=10)
-    os.unlink(script)
     assert result.ok is True
     assert result.denied_tools == ["Edit"]
+
+
+@pytest.mark.anyio
+async def test_run_claude_survives_a_non_string_result(tmp_path):
+    payload = json.dumps({"result": 42, "session_id": "s-1", "is_error": False})
+    script = _fake_claude(tmp_path, f"cat <<'JSON'\n{payload}\nJSON\n")
+    result = await run_claude([script], cwd=str(tmp_path), timeout=10)
+    assert result.ok is True
+    assert result.short == ""
+
+
+@pytest.mark.anyio
+async def test_run_claude_ignores_malformed_denials(tmp_path):
+    payload = json.dumps({
+        "result": "hola", "session_id": "s-1", "is_error": False,
+        "permission_denials": ["Edit", {"tool_name": "Write"}],
+    })
+    script = _fake_claude(tmp_path, f"cat <<'JSON'\n{payload}\nJSON\n")
+    result = await run_claude([script], cwd=str(tmp_path), timeout=10)
+    assert result.ok is True
+    assert result.denied_tools == ["Write"]
+
+
+@pytest.mark.anyio
+async def test_run_claude_carries_denials_on_the_error_path(tmp_path):
+    payload = json.dumps({
+        "result": "se acabo el credito",
+        "session_id": "s-1",
+        "is_error": True,
+        "permission_denials": [{"tool_name": "Bash"}],
+    })
+    script = _fake_claude(tmp_path, f"cat <<'JSON'\n{payload}\nJSON\n")
+    result = await run_claude([script], cwd=str(tmp_path), timeout=10)
+    assert result.ok is False
+    assert result.denied_tools == ["Bash"]
+
+
+@pytest.mark.anyio
+async def test_run_claude_keeps_the_end_of_a_long_stderr(tmp_path):
+    script = _fake_claude(
+        tmp_path,
+        "python3 -c \"print('ruido ' * 200 + 'LA CAUSA REAL')\" >&2\nexit 1\n",
+    )
+    result = await run_claude([script], cwd=str(tmp_path), timeout=10)
+    assert result.ok is False
+    assert "LA CAUSA REAL" in result.error
+    assert len(result.error) <= 300

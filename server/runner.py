@@ -107,16 +107,30 @@ class RunResult:
     denied_tools: list[str] = field(default_factory=list)
 
 
+def _kill_group(process) -> None:
+    """Mata el grupo entero del subproceso, si sigue vivo."""
+    try:
+        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
 async def run_claude(cmd: list[str], cwd: str, timeout: int) -> RunResult:
     """Lanza el comando y devuelve el resultado ya troceado.
 
     Usa create_subprocess_exec con argv como lista: no hay shell de por
     medio, asi que el prompt del usuario no puede inyectar comandos.
 
-    Nunca lanza excepciones: cualquier fallo vuelve como RunResult(ok=False)
-    con un mensaje que cabe en un reloj. Si una excepcion se escapara de
-    aqui, el job se quedaria en 'running' para siempre.
+    Nunca lanza excepciones, salvo CancelledError (cancelacion externa: el
+    boton del reloj o el apagado del servidor), que se propaga a proposito
+    despues de matar al subproceso. Cualquier otro fallo vuelve como
+    RunResult(ok=False) con un mensaje que cabe en un reloj. Si una
+    excepcion se escapara de aqui sin mas, el job se quedaria en 'running'
+    para siempre.
     """
+    if not cmd:
+        return RunResult(ok=False, error="Comando vacio")
+
     try:
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -135,20 +149,24 @@ async def run_claude(cmd: list[str], cwd: str, timeout: int) -> RunResult:
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
-        # start_new_session=True mete el proceso en su propio grupo,
-        # asi que matamos el grupo entero: si claude lanzo hijos (por
-        # ejemplo herramientas Bash), un kill() simple al proceso
-        # principal los deja huerfanos corriendo hasta que terminen solos.
-        try:
-            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        _kill_group(process)
         await process.wait()
         return RunResult(ok=False, error="Tardo demasiado")
+    except asyncio.CancelledError:
+        # Cancelacion de fuera: el boton del reloj o el apagado del
+        # servidor. Hay que propagarla, pero no sin matar antes al
+        # subproceso: si no, queda un claude vivo gastando tokens. No
+        # esperamos con process.wait() aqui: esperar mientras nos estan
+        # cancelando no es fiable, asi que matamos y relanzamos; el child
+        # watcher de asyncio se encarga de recoger el proceso.
+        _kill_group(process)
+        raise
 
     if process.returncode != 0:
         message = stderr.decode(errors="replace").strip() or "claude fallo sin decir por que"
-        return RunResult(ok=False, error=message[:ERROR_MAX])
+        # Del final, no del principio: los CLI ponen la causa en la ultima
+        # linea, detras del ruido.
+        return RunResult(ok=False, error=message[-ERROR_MAX:])
 
     try:
         payload = json.loads(stdout.decode(errors="replace"))
@@ -158,17 +176,25 @@ async def run_claude(cmd: list[str], cwd: str, timeout: int) -> RunResult:
     if not isinstance(payload, dict):
         return RunResult(ok=False, error="Respuesta ilegible de claude")
 
-    text = payload.get("result") or ""
+    text = payload.get("result")
+    if not isinstance(text, str):
+        text = ""
     session_id = payload.get("session_id")
-
-    if payload.get("is_error"):
-        return RunResult(ok=False, session_id=session_id, error=text[:ERROR_MAX])
-
-    short, full = split_answer(text)
     denied = [
         denial.get("tool_name", "?")
         for denial in payload.get("permission_denials") or []
+        if isinstance(denial, dict)
     ]
+
+    if payload.get("is_error"):
+        return RunResult(
+            ok=False,
+            session_id=session_id,
+            error=text[:ERROR_MAX],
+            denied_tools=denied,
+        )
+
+    short, full = split_answer(text)
     return RunResult(
         ok=True,
         short=short,
