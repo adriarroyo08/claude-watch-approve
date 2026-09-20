@@ -25,7 +25,7 @@ PROJECT = Project(id="ahorrapp", name="AhorrApp", path="/tmp")
 
 
 def make_manager(db, results, gate=None):
-    """results: lista de RunResult que el runner falso ira devolviendo."""
+    """Devuelve (manager, calls) — calls registra lo que recibio el runner falso."""
     calls = []
 
     async def fake_runner(cmd, cwd, timeout):
@@ -34,14 +34,12 @@ def make_manager(db, results, gate=None):
             await gate.wait()
         return results.pop(0)
 
-    manager = JobManager(db=db, runner=fake_runner)
-    manager.calls = calls
-    return manager
+    return JobManager(db=db, runner=fake_runner), calls
 
 
 @pytest.mark.anyio
 async def test_read_job_finishes_done(db):
-    manager = make_manager(db, [RunResult(ok=True, short="Corto.", full="Corto.\n\nLargo.", session_id="s-1")])
+    manager, calls = make_manager(db, [RunResult(ok=True, short="Corto.", full="Corto.\n\nLargo.", session_id="s-1")])
     job_id = await manager.submit(PROJECT, "que tal", mode="read", thread="new")
     await manager.wait_idle()
     job = db.get_job(job_id)
@@ -52,23 +50,23 @@ async def test_read_job_finishes_done(db):
 
 @pytest.mark.anyio
 async def test_read_job_runs_in_project_directory(db):
-    manager = make_manager(db, [RunResult(ok=True, short="ok", full="ok")])
+    manager, calls = make_manager(db, [RunResult(ok=True, short="ok", full="ok")])
     await manager.submit(PROJECT, "que tal", mode="read", thread="new")
     await manager.wait_idle()
-    assert manager.calls[0]["cwd"] == "/tmp"
+    assert calls[0]["cwd"] == "/tmp"
 
 
 @pytest.mark.anyio
 async def test_read_job_uses_the_read_timeout(db):
-    manager = make_manager(db, [RunResult(ok=True, short="ok", full="ok")])
+    manager, calls = make_manager(db, [RunResult(ok=True, short="ok", full="ok")])
     await manager.submit(PROJECT, "que tal", mode="read", thread="new")
     await manager.wait_idle()
-    assert manager.calls[0]["timeout"] == 180
+    assert calls[0]["timeout"] == 180
 
 
 @pytest.mark.anyio
 async def test_failed_run_becomes_error(db):
-    manager = make_manager(db, [RunResult(ok=False, error="Tardo demasiado")])
+    manager, calls = make_manager(db, [RunResult(ok=False, error="Tardo demasiado")])
     job_id = await manager.submit(PROJECT, "que tal", mode="read", thread="new")
     await manager.wait_idle()
     job = db.get_job(job_id)
@@ -79,7 +77,7 @@ async def test_failed_run_becomes_error(db):
 @pytest.mark.anyio
 async def test_second_submit_while_running_raises_busy(db):
     gate = asyncio.Event()
-    manager = make_manager(db, [RunResult(ok=True, short="ok", full="ok")], gate=gate)
+    manager, calls = make_manager(db, [RunResult(ok=True, short="ok", full="ok")], gate=gate)
     await manager.submit(PROJECT, "primera", mode="read", thread="new")
     with pytest.raises(Busy):
         await manager.submit(PROJECT, "segunda", mode="read", thread="new")
@@ -89,7 +87,7 @@ async def test_second_submit_while_running_raises_busy(db):
 
 @pytest.mark.anyio
 async def test_submit_allowed_again_after_finishing(db):
-    manager = make_manager(db, [
+    manager, calls = make_manager(db, [
         RunResult(ok=True, short="una", full="una"),
         RunResult(ok=True, short="dos", full="dos"),
     ])
@@ -103,20 +101,20 @@ async def test_submit_allowed_again_after_finishing(db):
 @pytest.mark.anyio
 async def test_thread_new_ignores_stored_session(db):
     db.set_thread("ahorrapp", "session-vieja")
-    manager = make_manager(db, [RunResult(ok=True, short="ok", full="ok", session_id="s-nueva")])
+    manager, calls = make_manager(db, [RunResult(ok=True, short="ok", full="ok", session_id="s-nueva")])
     await manager.submit(PROJECT, "que tal", mode="read", thread="new")
     await manager.wait_idle()
-    assert "--resume" not in manager.calls[0]["cmd"]
+    assert "--resume" not in calls[0]["cmd"]
     assert db.get_thread("ahorrapp")["session_id"] == "s-nueva"
 
 
 @pytest.mark.anyio
 async def test_thread_continue_resumes_stored_session(db):
     db.set_thread("ahorrapp", "session-vieja")
-    manager = make_manager(db, [RunResult(ok=True, short="ok", full="ok", session_id="session-vieja")])
+    manager, calls = make_manager(db, [RunResult(ok=True, short="ok", full="ok", session_id="session-vieja")])
     await manager.submit(PROJECT, "y eso por que", mode="read", thread="continue")
     await manager.wait_idle()
-    cmd = manager.calls[0]["cmd"]
+    cmd = calls[0]["cmd"]
     assert cmd[cmd.index("--resume") + 1] == "session-vieja"
 
 
@@ -130,7 +128,7 @@ async def test_thread_continue_ignores_expired_session(db):
     )
     db._conn.commit()
 
-    manager = make_manager(db, [RunResult(ok=True, short="ok", full="ok", session_id="s-nueva")])
+    manager, calls = make_manager(db, [RunResult(ok=True, short="ok", full="ok", session_id="s-nueva")])
     await manager.submit(PROJECT, "y eso por que", mode="read", thread="continue")
     # _session_for no espera a nada: para cuando submit() devuelve el
     # control, la fila caducada ya se ha borrado, antes de que el job
@@ -139,7 +137,7 @@ async def test_thread_continue_ignores_expired_session(db):
 
     await manager.wait_idle()
 
-    assert "--resume" not in manager.calls[0]["cmd"]
+    assert "--resume" not in calls[0]["cmd"]
     assert db.get_thread("ahorrapp")["session_id"] == "s-nueva"
 
 
@@ -157,9 +155,26 @@ async def test_unexpected_failure_marks_the_job_error(db):
 
 
 @pytest.mark.anyio
+async def test_write_job_reaches_awaiting_approval(db):
+    manager, calls = make_manager(db, [
+        RunResult(ok=True, short="Tocare 3 archivos.",
+                  full="Tocare 3 archivos.\n\nDetalle.", session_id="s-1"),
+    ])
+    job_id = await manager.submit(PROJECT, "arregla el typo", mode="write", thread="new")
+    await manager.wait_idle()
+    job = db.get_job(job_id)
+    assert job["status"] == "awaiting_approval"
+    assert job["plan"] == "Tocare 3 archivos."
+    assert job["session_id"] == "s-1"
+    assert job["short_text"] is None          # el contrato: plan si, short no
+    assert calls[0]["timeout"] == 600         # WRITE_TIMEOUT, no READ_TIMEOUT
+    assert calls[0]["cmd"][calls[0]["cmd"].index("--permission-mode") + 1] == "plan"
+
+
+@pytest.mark.anyio
 async def test_rate_limit_blocks_after_max(db, monkeypatch):
     monkeypatch.setattr("server.jobs.MAX_ASKS_PER_HOUR", 2)
-    manager = make_manager(db, [
+    manager, calls = make_manager(db, [
         RunResult(ok=True, short="a", full="a"),
         RunResult(ok=True, short="b", full="b"),
     ])
