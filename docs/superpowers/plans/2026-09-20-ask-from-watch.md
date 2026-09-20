@@ -25,6 +25,23 @@ Verificado contra `claude` 2.1.278 en esta máquina, no supuesto:
 - Una consulta trivial costó **0,07 $** (casi todo creación de caché). El límite de
   20 peticiones/hora es una medida de coste real, no decorativa.
 
+### Lo que se aprendio midiendo, no leyendo
+
+`--allowedTools` **no es una lista blanca**: pre-aprueba herramientas, no restringe
+cuales existen. Y `claude` carga `~/.claude/settings.json`, que en esta maquina
+concede `Write`, `Edit` y `Bash` a todo. Resultado medido contra el CLI real: la
+fase de lectura **creaba archivos en disco**, con los 125 tests en verde, porque
+todos usan un `claude` falso y comprobaban fidelidad al plan, no la propiedad.
+
+Lo que si funciona, tambien medido: `--restricted` (ignora los settings de usuario,
+proyecto y local, y confina las herramientas de archivo al directorio de trabajo)
+junto a `--tools` (define que herramientas existen). `--permission-mode manual` y
+`dontAsk` NO sirven: probados, siguieron escribiendo.
+
+La fase `plan` si aguantaba por si sola, porque `--permission-mode plan` bloquea
+ediciones pese a los settings globales, pero ahora tambien lleva `--restricted`:
+depender de que un fichero de configuracion ajeno no conceda algo no es una garantia.
+
 La suite actual son **20 tests que pasan**
 (`./venv/bin/python -m pytest server/tests hook/tests -q`).
 No debe bajar de ahí en ningún momento.
@@ -554,11 +571,30 @@ EXEC_DENIED_TOOLS = [
     "WebFetch",
 ]
 
+# LIMITE DE SEGURIDAD. --tools define que herramientas EXISTEN; --allowedTools
+# solo dice cuales no preguntan. Solo lo primero es una lista blanca de verdad:
+# medido contra el CLI real, la fase de lectura creaba archivos hasta que se
+# uso --tools.
+READ_PHASE_TOOLS = "Read,Grep,Glob,Bash"
+
+# La fase exec si necesita escribir, pero solo eso: nada de WebFetch ni de
+# herramientas que ejecuten codigo mas alla de Bash, que ya va con lista negra.
+EXEC_PHASE_TOOLS = "Read,Grep,Glob,Bash,Edit,Write"
+
 SHORT_MAX = 200
 
 
-def build_command(phase: str, prompt: str, session_id: str | None = None) -> list[str]:
-    """Construye el comando para una fase: 'read', 'plan' o 'exec'."""
+def build_command(
+    phase: Literal["read", "plan", "exec"],
+    prompt: str,
+    session_id: str | None = None,
+) -> list[str]:
+    """Construye el comando para una fase: 'read', 'plan' o 'exec'.
+
+    --restricted no es opcional: sin el, claude carga ~/.claude/settings.json,
+    que en esta maquina concede Write, Edit y Bash a todo. Medido: la fase de
+    lectura creaba archivos en disco hasta que se anadio.
+    """
     cmd = [
         CLAUDE_BIN,
         "-p",
@@ -571,13 +607,16 @@ def build_command(phase: str, prompt: str, session_id: str | None = None) -> lis
         ASK_MODEL,
         "--append-system-prompt",
         BREVITY_PROMPT,
+        "--restricted",
     ]
 
     if phase == "read":
-        cmd += ["--allowedTools", *READ_TOOLS]
+        cmd += ["--tools", READ_PHASE_TOOLS, "--allowedTools", *READ_TOOLS]
     elif phase == "plan":
+        cmd += ["--tools", READ_PHASE_TOOLS, "--allowedTools", *READ_TOOLS]
         cmd += ["--permission-mode", "plan"]
     elif phase == "exec":
+        cmd += ["--tools", EXEC_PHASE_TOOLS]
         cmd += ["--permission-mode", "acceptEdits"]
         cmd += ["--disallowedTools", *EXEC_DENIED_TOOLS]
     else:
