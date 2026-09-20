@@ -21,12 +21,22 @@ def verify_api_key(x_api_key: str = Header()):
         raise HTTPException(status_code=403, detail="Invalid API key")
 
 
+INSECURE_DEFAULT = "change-me-in-production"
+
+
 def verify_ask_key(x_api_key: str = Header()):
     """Clave del reloj: solo abre /projects y /ask*.
 
     Son dos claves distintas a proposito: perder el reloj se arregla
     revocando una sola, sin tocar las notificaciones.
     """
+    if ASK_KEY == INSECURE_DEFAULT:
+        # Fallar cerrado. El valor por defecto esta escrito en config.py, que
+        # esta publicado, y estos endpoints lanzan procesos. Un despliegue que
+        # se olvide de la clave debe romperse ruidosamente, no quedarse abierto.
+        raise HTTPException(
+            status_code=503, detail="CLAUDE_WATCH_ASK_KEY sin configurar"
+        )
     if not hmac.compare_digest(x_api_key, ASK_KEY):
         raise HTTPException(status_code=403, detail="Invalid API key")
 

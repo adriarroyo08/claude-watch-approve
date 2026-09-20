@@ -219,3 +219,39 @@ async def test_get_unknown_job_is_404(watch_headers):
     async with client() as http:
         resp = await http.get("/ask/no-existe", headers=watch_headers)
     assert resp.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_watch_endpoints_refuse_the_default_key(monkeypatch):
+    """Sin CLAUDE_WATCH_ASK_KEY puesta, no se abre: se rompe."""
+    monkeypatch.setattr("server.main.ASK_KEY", "change-me-in-production")
+    async with client() as http:
+        resp = await http.get(
+            "/projects", headers={"X-Api-Key": "change-me-in-production"}
+        )
+    assert resp.status_code == 503
+
+
+@pytest.mark.anyio
+async def test_ask_refuses_the_default_key_too(monkeypatch):
+    monkeypatch.setattr("server.main.ASK_KEY", "change-me-in-production")
+    async with client() as http:
+        resp = await http.post(
+            "/ask",
+            json={"project_id": "ahorrapp", "prompt": "hola", "mode": "read", "thread": "new"},
+            headers={"X-Api-Key": "change-me-in-production"},
+        )
+    assert resp.status_code == 503
+
+
+@pytest.mark.anyio
+async def test_notify_still_works_with_the_hook_key(hook_headers):
+    """El guard es solo del reloj: la via de notificaciones no se toca."""
+    async with client() as http:
+        with patch("server.main.send_info_notification", return_value=False):
+            resp = await http.post(
+                "/notify",
+                json={"tool_name": "Bash", "summary": "ls"},
+                headers=hook_headers,
+            )
+    assert resp.status_code == 201
