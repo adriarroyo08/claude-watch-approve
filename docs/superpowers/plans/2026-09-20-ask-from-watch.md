@@ -750,6 +750,14 @@ Y al final del archivo:
 ERROR_MAX = 300
 
 
+def _kill_group(process) -> None:
+    """Mata el grupo entero del subproceso, si sigue vivo."""
+    try:
+        os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
 @dataclass
 class RunResult:
     ok: bool
@@ -787,16 +795,22 @@ async def run_claude(cmd: list[str], cwd: str, timeout: int) -> RunResult:
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
     except asyncio.TimeoutError:
-        try:
-            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        _kill_group(process)
         await process.wait()
         return RunResult(ok=False, error="Tardo demasiado")
+    except asyncio.CancelledError:
+        # Cancelacion de fuera: el boton del reloj (jobs.cancel hace
+        # task.cancel) o el apagado del servidor. Hay que propagarla, pero
+        # no sin matar antes al subproceso: si no, queda un claude vivo
+        # gastando tokens con la cola creyendose libre.
+        _kill_group(process)
+        raise
 
     if process.returncode != 0:
         message = stderr.decode(errors="replace").strip() or "claude fallo sin decir por que"
-        return RunResult(ok=False, error=message[:ERROR_MAX])
+        # Del final, no del principio: los CLI ponen la causa en la ultima
+        # linea, detras del ruido.
+        return RunResult(ok=False, error=message[-ERROR_MAX:])
 
     try:
         payload = json.loads(stdout.decode(errors="replace"))
@@ -806,7 +820,9 @@ async def run_claude(cmd: list[str], cwd: str, timeout: int) -> RunResult:
     if not isinstance(payload, dict):
         return RunResult(ok=False, error="Respuesta ilegible de claude")
 
-    text = payload.get("result") or ""
+    text = payload.get("result")
+    if not isinstance(text, str):
+        text = ""
     session_id = payload.get("session_id")
 
     if payload.get("is_error"):
