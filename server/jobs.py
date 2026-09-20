@@ -76,6 +76,22 @@ class JobManager:
         return row["session_id"]
 
     async def _run(self, job_id, project, phase, prompt, session_id):
+        try:
+            await self._execute(job_id, project, phase, prompt, session_id)
+        except asyncio.CancelledError:
+            # La cancelacion la gestiona quien cancela: cancel() ya deja la
+            # fila en 'cancelled'. Propagar sin tocar nada.
+            raise
+        except Exception as exc:
+            # Ultima red: si algo se escapa, la fila no puede quedarse en
+            # 'running' o el reloj sondea para siempre.
+            self._db.update_job(
+                job_id,
+                status="error",
+                error=f"Fallo inesperado: {exc}"[:300],
+            )
+
+    async def _execute(self, job_id, project, phase, prompt, session_id):
         timeout = READ_TIMEOUT if phase == "read" else WRITE_TIMEOUT
         cmd = build_command(phase, prompt, session_id=session_id)
         result = await self._runner(cmd, project.path, timeout)

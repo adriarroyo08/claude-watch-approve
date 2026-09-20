@@ -144,6 +144,19 @@ async def test_thread_continue_ignores_expired_session(db):
 
 
 @pytest.mark.anyio
+async def test_unexpected_failure_marks_the_job_error(db):
+    async def runner_que_revienta(cmd, cwd, timeout):
+        raise RuntimeError("algo inesperado")
+
+    manager = JobManager(db=db, runner=runner_que_revienta)
+    job_id = await manager.submit(PROJECT, "que tal", mode="read", thread="new")
+    await manager.wait_idle()
+    job = db.get_job(job_id)
+    assert job["status"] == "error"
+    assert "inesperado" in job["error"]
+
+
+@pytest.mark.anyio
 async def test_rate_limit_blocks_after_max(db, monkeypatch):
     monkeypatch.setattr("server.jobs.MAX_ASKS_PER_HOUR", 2)
     manager = make_manager(db, [
