@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from server.database import ApprovalDB
-from server.jobs import Busy, JobManager, RateLimited
+from server.jobs import Busy, JobManager, NotApprovable, RateLimited
 from server.projects import Project
 from server.runner import RunResult
 
@@ -186,9 +186,6 @@ async def test_rate_limit_blocks_after_max(db, monkeypatch):
         await manager.submit(PROJECT, "tres", mode="read", thread="new")
 
 
-from server.jobs import NotApprovable
-
-
 @pytest.mark.anyio
 async def test_approve_runs_exec_phase_resuming_the_session(db):
     manager, calls = make_manager(db, [
@@ -266,12 +263,16 @@ async def test_expired_approval_runs_nothing(db, monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_cancel_marks_job_cancelled(db):
+async def test_cancel_stops_a_run_that_is_really_in_flight(db):
     gate = asyncio.Event()
-    manager, _ = make_manager(db, [RunResult(ok=True, short="ok", full="ok")], gate=gate)
+    manager, calls = make_manager(db, [RunResult(ok=True, short="ok", full="ok")], gate=gate)
     job_id = await manager.submit(PROJECT, "que tal", mode="read", thread="new")
+    await asyncio.sleep(0)   # deja que la task arranque de verdad
+    assert calls, "el runner no arranco: sin esto el test no prueba nada"
+    assert manager.busy is True
     await manager.cancel(job_id)
     gate.set()
+    await asyncio.sleep(0)
     assert db.get_job(job_id)["status"] == "cancelled"
     assert manager.busy is False
 
@@ -279,11 +280,13 @@ async def test_cancel_marks_job_cancelled(db):
 @pytest.mark.anyio
 async def test_cancel_frees_the_slot(db):
     gate = asyncio.Event()
-    manager, _ = make_manager(db, [
+    manager, calls = make_manager(db, [
         RunResult(ok=True, short="a", full="a"),
         RunResult(ok=True, short="b", full="b"),
     ], gate=gate)
     first = await manager.submit(PROJECT, "primera", mode="read", thread="new")
+    await asyncio.sleep(0)
+    assert calls, "el runner no arranco"
     await manager.cancel(first)
     gate.set()
     second = await manager.submit(PROJECT, "segunda", mode="read", thread="new")
@@ -292,16 +295,69 @@ async def test_cancel_frees_the_slot(db):
 
 
 @pytest.mark.anyio
-async def test_cancelling_an_old_job_does_not_kill_the_current_one(db):
-    """El id viejo que quedo en _current_job_id no debe tumbar al job en curso."""
-    manager, _ = make_manager(db, [
-        RunResult(ok=True, short="a", full="a"),
-        RunResult(ok=True, short="b", full="b"),
+async def test_cancel_does_not_clobber_a_finished_job(db):
+    """Lo peor que puede hacer esto: decir 'cancelado' de algo ya hecho."""
+    manager, _ = make_manager(db, [RunResult(ok=True, short="Hecho.", full="Hecho.")])
+    job_id = await manager.submit(PROJECT, "que tal", mode="read", thread="new")
+    await manager.wait_idle()
+    assert db.get_job(job_id)["status"] == "done"
+    assert await manager.cancel(job_id) == "done"
+    job = db.get_job(job_id)
+    assert job["status"] == "done"
+    assert job["short_text"] == "Hecho."
+
+
+@pytest.mark.anyio
+async def test_cancel_of_unknown_job_returns_none(db):
+    manager, _ = make_manager(db, [])
+    assert await manager.cancel("no-existe") is None
+
+
+@pytest.mark.anyio
+async def test_approve_rejects_a_different_project(db):
+    """Un plan de un repo no se ejecuta en el directorio de otro."""
+    otro = Project(id="petwatch", name="PetWatch1", path="/tmp")
+    manager, calls = make_manager(db, [
+        RunResult(ok=True, short="plan", full="plan", session_id="s-1"),
+        RunResult(ok=True, short="NO DEBERIA CORRER", full="x", session_id="s-1"),
     ])
-    first = await manager.submit(PROJECT, "primera", mode="read", thread="new")
+    job_id = await manager.submit(PROJECT, "arregla el typo", mode="write", thread="new")
     await manager.wait_idle()
-    second = await manager.submit(PROJECT, "segunda", mode="read", thread="new")
-    await manager.cancel(first)
+    with pytest.raises(NotApprovable):
+        await manager.approve(job_id, otro)
+    assert len(calls) == 1
+
+
+@pytest.mark.anyio
+async def test_cancelling_an_old_plan_does_not_kill_the_running_job(db):
+    """Cancelar un plan sin aprobar no debe tumbar el job que corre ahora.
+
+    _current_job_id no se resetea al terminar un job, asi que apunta al
+    ultimo. Esta es la prueba de que la guarda lo tiene en cuenta.
+    """
+    gate = asyncio.Event()
+    calls = []
+
+    async def runner(cmd, cwd, timeout):
+        calls.append(cmd)
+        if len(calls) > 1:          # solo el segundo se queda esperando
+            await gate.wait()
+        return RunResult(ok=True, short="ok", full="ok", session_id="s-1")
+
+    manager = JobManager(db=db, runner=runner)
+
+    plan_id = await manager.submit(PROJECT, "arregla el typo", mode="write", thread="new")
     await manager.wait_idle()
-    assert db.get_job(first)["status"] == "cancelled"
-    assert db.get_job(second)["status"] == "done"
+    assert db.get_job(plan_id)["status"] == "awaiting_approval"
+
+    running_id = await manager.submit(PROJECT, "otra cosa", mode="read", thread="new")
+    await asyncio.sleep(0)
+    assert manager.busy is True, "el segundo job no arranco: el test no probaria nada"
+
+    assert await manager.cancel(plan_id) == "cancelled"
+    assert manager.busy is True, "cancelar el plan viejo tumbo el job en curso"
+
+    gate.set()
+    await manager.wait_idle()
+    assert db.get_job(plan_id)["status"] == "cancelled"
+    assert db.get_job(running_id)["status"] == "done"
