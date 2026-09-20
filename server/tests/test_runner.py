@@ -98,3 +98,93 @@ def test_split_answer_handles_windows_line_endings():
     short, full = split_answer("Corto.\r\n\r\nEl detalle largo.")
     assert short == "Corto."
     assert full == "Corto.\n\nEl detalle largo."
+
+
+import json
+import os
+import stat
+import tempfile
+from server.runner import run_claude
+
+
+def _fake_claude(body: str) -> str:
+    """Crea un ejecutable que imita a claude y devuelve su ruta."""
+    fd, path = tempfile.mkstemp(suffix=".sh")
+    with os.fdopen(fd, "w") as handle:
+        handle.write("#!/bin/sh\n" + body)
+    os.chmod(path, os.stat(path).st_mode | stat.S_IEXEC)
+    return path
+
+
+@pytest.mark.anyio
+async def test_run_claude_parses_successful_json(tmp_path):
+    payload = json.dumps({
+        "result": "Corto.\n\nLargo.",
+        "session_id": "s-99",
+        "is_error": False,
+        "permission_denials": [],
+    })
+    script = _fake_claude(f"cat <<'JSON'\n{payload}\nJSON\n")
+    result = await run_claude([script], cwd=str(tmp_path), timeout=10)
+    os.unlink(script)
+    assert result.ok is True
+    assert result.short == "Corto."
+    assert result.full == "Corto.\n\nLargo."
+    assert result.session_id == "s-99"
+
+
+@pytest.mark.anyio
+async def test_run_claude_reports_nonzero_exit(tmp_path):
+    script = _fake_claude("echo 'algo fue mal' >&2\nexit 1\n")
+    result = await run_claude([script], cwd=str(tmp_path), timeout=10)
+    os.unlink(script)
+    assert result.ok is False
+    assert "algo fue mal" in result.error
+
+
+@pytest.mark.anyio
+async def test_run_claude_reports_unreadable_output(tmp_path):
+    script = _fake_claude("echo 'esto no es json'\n")
+    result = await run_claude([script], cwd=str(tmp_path), timeout=10)
+    os.unlink(script)
+    assert result.ok is False
+    assert "ilegible" in result.error
+
+
+@pytest.mark.anyio
+async def test_run_claude_times_out_and_kills(tmp_path):
+    script = _fake_claude("sleep 30\n")
+    result = await run_claude([script], cwd=str(tmp_path), timeout=1)
+    os.unlink(script)
+    assert result.ok is False
+    assert "demasiado" in result.error
+
+
+@pytest.mark.anyio
+async def test_run_claude_honours_is_error_flag(tmp_path):
+    payload = json.dumps({
+        "result": "se acabo el credito",
+        "session_id": "s-1",
+        "is_error": True,
+        "permission_denials": [],
+    })
+    script = _fake_claude(f"cat <<'JSON'\n{payload}\nJSON\n")
+    result = await run_claude([script], cwd=str(tmp_path), timeout=10)
+    os.unlink(script)
+    assert result.ok is False
+    assert result.error == "se acabo el credito"
+
+
+@pytest.mark.anyio
+async def test_run_claude_records_permission_denials(tmp_path):
+    payload = json.dumps({
+        "result": "No he podido mirar eso.",
+        "session_id": "s-1",
+        "is_error": False,
+        "permission_denials": [{"tool_name": "Edit"}],
+    })
+    script = _fake_claude(f"cat <<'JSON'\n{payload}\nJSON\n")
+    result = await run_claude([script], cwd=str(tmp_path), timeout=10)
+    os.unlink(script)
+    assert result.ok is True
+    assert result.denied_tools == ["Edit"]
