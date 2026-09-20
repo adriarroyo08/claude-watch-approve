@@ -1,27 +1,60 @@
 import hmac
+import sys
+from contextlib import asynccontextmanager
 from typing import Literal
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from server.config import API_KEY, ASK_KEY, DB_PATH, PROJECTS
 from server.database import ApprovalDB
 from server.fcm import send_info_notification
-from server.jobs import Busy, JobManager, NotApprovable, RateLimited
+from server.jobs import Busy, JobManager, RateLimited
 
-app = FastAPI(title="Claude Watch")
 db = ApprovalDB(DB_PATH)
-db.orphan_running_jobs()
 job_manager = JobManager(db=db)
+
+INSECURE_DEFAULT = "change-me-in-production"
+
+
+def _on_startup() -> None:
+    """Lo que toca al empezar a servir de verdad, no al importar el modulo."""
+    # Los jobs que quedaron corriendo ya no tienen proceso detras.
+    db.orphan_running_jobs()
+    if ASK_KEY == INSECURE_DEFAULT:
+        print(
+            "AVISO: CLAUDE_WATCH_ASK_KEY sin configurar. Los endpoints del "
+            "reloj devolveran 503 hasta que se ponga una clave.",
+            file=sys.stderr,
+        )
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _on_startup()
+    yield
+
+
+app = FastAPI(title="Claude Watch", lifespan=lifespan)
+
+
+def _keys_match(provided: str, expected: str) -> bool:
+    """Compara en tiempo constante, sin romperse con basura de internet.
+
+    compare_digest lanza TypeError si le llegan str con caracteres fuera de
+    ASCII, asi que una cabecera como 'X-Api-Key: cafe con acento' convertia
+    la comprobacion de credenciales en un 500. Se comparan bytes.
+    """
+    try:
+        return hmac.compare_digest(provided.encode(), expected.encode())
+    except (AttributeError, UnicodeEncodeError):
+        return False
 
 
 def verify_api_key(x_api_key: str = Header()):
     """Clave del hook: solo abre /notify y /register-device."""
-    if not hmac.compare_digest(x_api_key, API_KEY):
-        raise HTTPException(status_code=403, detail="Invalid API key")
-
-
-INSECURE_DEFAULT = "change-me-in-production"
+    if not _keys_match(x_api_key, API_KEY):
+        raise HTTPException(status_code=403, detail="Clave no valida")
 
 
 def verify_ask_key(x_api_key: str = Header()):
@@ -37,8 +70,8 @@ def verify_ask_key(x_api_key: str = Header()):
         raise HTTPException(
             status_code=503, detail="CLAUDE_WATCH_ASK_KEY sin configurar"
         )
-    if not hmac.compare_digest(x_api_key, ASK_KEY):
-        raise HTTPException(status_code=403, detail="Invalid API key")
+    if not _keys_match(x_api_key, ASK_KEY):
+        raise HTTPException(status_code=403, detail="Clave no valida")
 
 
 def get_project(project_id: str):
@@ -50,7 +83,7 @@ def get_project(project_id: str):
     """
     project = PROJECTS.get(project_id)
     if project is None:
-        raise HTTPException(status_code=404, detail="Unknown project")
+        raise HTTPException(status_code=404, detail="No existe ese proyecto")
     return project
 
 
@@ -71,9 +104,8 @@ class AskRequest(BaseModel):
     thread: Literal["new", "continue"] = "new"
 
 
-@app.post("/notify", status_code=201)
-def notify(body: NotifyRequest, x_api_key: str = Header()):
-    verify_api_key(x_api_key)
+@app.post("/notify", status_code=201, dependencies=[Depends(verify_api_key)])
+def notify(body: NotifyRequest):
     tokens = db.get_device_tokens()
     message = body.result or body.summary
     try:
@@ -87,16 +119,14 @@ def notify(body: NotifyRequest, x_api_key: str = Header()):
     return {"status": "sent", "devices": len(tokens)}
 
 
-@app.post("/register-device")
-def register_device(body: DeviceRegistration, x_api_key: str = Header()):
-    verify_api_key(x_api_key)
+@app.post("/register-device", dependencies=[Depends(verify_api_key)])
+def register_device(body: DeviceRegistration):
     db.register_device(body.fcm_token)
     return {"status": "registered"}
 
 
-@app.get("/projects")
-def list_projects(x_api_key: str = Header()):
-    verify_ask_key(x_api_key)
+@app.get("/projects", dependencies=[Depends(verify_ask_key)])
+def list_projects():
     # Solo id y nombre: la ruta del proyecto no sale del servidor.
     return {
         "projects": [
@@ -105,9 +135,8 @@ def list_projects(x_api_key: str = Header()):
     }
 
 
-@app.post("/ask", status_code=202)
-async def ask(body: AskRequest, x_api_key: str = Header()):
-    verify_ask_key(x_api_key)
+@app.post("/ask", status_code=202, dependencies=[Depends(verify_ask_key)])
+async def ask(body: AskRequest):
     project = get_project(body.project_id)
     try:
         job_id = await job_manager.submit(
@@ -120,12 +149,11 @@ async def ask(body: AskRequest, x_api_key: str = Header()):
     return {"job_id": job_id, "status": "running"}
 
 
-@app.get("/ask/{job_id}")
-def get_ask(job_id: str, x_api_key: str = Header()):
-    verify_ask_key(x_api_key)
+@app.get("/ask/{job_id}", dependencies=[Depends(verify_ask_key)])
+def get_ask(job_id: str):
     job = db.get_job(job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="Unknown job")
+        raise HTTPException(status_code=404, detail="No existe ese trabajo")
     return {
         "status": job["status"],
         "short": job["short_text"],

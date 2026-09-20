@@ -8,10 +8,13 @@ from server.runner import RunResult
 
 @pytest.fixture(autouse=True)
 def reset_db():
-    db._conn.executescript("DELETE FROM devices; DELETE FROM jobs; DELETE FROM threads;")
-    db._conn.commit()
+    task = job_manager._task
+    if task is not None and not task.done():
+        task.cancel()
     job_manager._task = None
     job_manager._current_job_id = None
+    db._conn.executescript("DELETE FROM devices; DELETE FROM jobs; DELETE FROM threads;")
+    db._conn.commit()
     yield
 
 
@@ -255,3 +258,54 @@ async def test_notify_still_works_with_the_hook_key(hook_headers):
                 headers=hook_headers,
             )
     assert resp.status_code == 201
+
+
+@pytest.mark.anyio
+async def test_a_non_ascii_key_is_rejected_not_a_crash():
+    """Una cabecera con acentos no debe reventar la comparacion.
+
+    httpx exige ascii puro para valores de cabecera str, asi que para
+    simular al cliente real que manda bytes no-ascii se pasan los bytes
+    ya codificados: eso es lo que de verdad le llega a Starlette.
+    """
+    async with client() as http:
+        resp = await http.get(
+            "/projects", headers=[(b"X-Api-Key", "café".encode("utf-8"))]
+        )
+    assert resp.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_a_non_ascii_key_is_rejected_on_the_hook_path_too():
+    async with client() as http:
+        resp = await http.post(
+            "/notify",
+            json={"tool_name": "Bash", "summary": "ls"},
+            headers=[(b"X-Api-Key", "café".encode("utf-8"))],
+        )
+    assert resp.status_code == 403
+
+
+def test_every_route_declares_an_auth_dependency():
+    """Ningun endpoint nuevo puede quedarse sin guardia por despiste."""
+    from server.main import app, verify_api_key, verify_ask_key
+    guards = {verify_api_key, verify_ask_key}
+    sin_guardia = []
+    for route in app.routes:
+        path = getattr(route, "path", "")
+        if path in ("/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"):
+            continue
+        dependencias = {
+            d.dependency for d in getattr(route, "dependencies", [])
+        }
+        if not (dependencias & guards):
+            sin_guardia.append(path)
+    assert sin_guardia == [], f"endpoints sin autenticacion: {sin_guardia}"
+
+
+def test_startup_marks_orphaned_jobs_as_error():
+    from server.main import _on_startup
+    db.create_job("huerfano", project_id="ahorrapp", mode="read", prompt="x")
+    assert db.get_job("huerfano")["status"] == "running"
+    _on_startup()
+    assert db.get_job("huerfano")["status"] == "error"
