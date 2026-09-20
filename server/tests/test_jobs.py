@@ -184,3 +184,124 @@ async def test_rate_limit_blocks_after_max(db, monkeypatch):
     await manager.wait_idle()
     with pytest.raises(RateLimited):
         await manager.submit(PROJECT, "tres", mode="read", thread="new")
+
+
+from server.jobs import NotApprovable
+
+
+@pytest.mark.anyio
+async def test_approve_runs_exec_phase_resuming_the_session(db):
+    manager, calls = make_manager(db, [
+        RunResult(ok=True, short="plan", full="plan", session_id="s-1"),
+        RunResult(ok=True, short="Hecho.", full="Hecho.", session_id="s-1"),
+    ])
+    job_id = await manager.submit(PROJECT, "arregla el typo", mode="write", thread="new")
+    await manager.wait_idle()
+    await manager.approve(job_id, PROJECT)
+    await manager.wait_idle()
+    job = db.get_job(job_id)
+    assert job["status"] == "done"
+    assert job["short_text"] == "Hecho."
+    exec_cmd = calls[1]["cmd"]
+    assert exec_cmd[exec_cmd.index("--permission-mode") + 1] == "acceptEdits"
+    assert exec_cmd[exec_cmd.index("--resume") + 1] == "s-1"
+
+
+@pytest.mark.anyio
+async def test_nothing_runs_before_approving(db):
+    """El plan se queda quieto: un solo comando hasta que apruebas."""
+    manager, calls = make_manager(db, [
+        RunResult(ok=True, short="plan", full="plan", session_id="s-1"),
+        RunResult(ok=True, short="Hecho.", full="Hecho.", session_id="s-1"),
+    ])
+    await manager.submit(PROJECT, "arregla el typo", mode="write", thread="new")
+    await manager.wait_idle()
+    assert len(calls) == 1
+    assert calls[0]["cmd"][calls[0]["cmd"].index("--permission-mode") + 1] == "plan"
+    assert "acceptEdits" not in calls[0]["cmd"]
+
+
+@pytest.mark.anyio
+async def test_approve_rejects_job_that_is_not_awaiting(db):
+    manager, _ = make_manager(db, [RunResult(ok=True, short="ok", full="ok")])
+    job_id = await manager.submit(PROJECT, "que tal", mode="read", thread="new")
+    await manager.wait_idle()
+    with pytest.raises(NotApprovable):
+        await manager.approve(job_id, PROJECT)
+
+
+@pytest.mark.anyio
+async def test_approve_rejects_unknown_job(db):
+    manager, _ = make_manager(db, [])
+    with pytest.raises(NotApprovable):
+        await manager.approve("no-existe", PROJECT)
+
+
+@pytest.mark.anyio
+async def test_approve_expires_after_ttl(db, monkeypatch):
+    monkeypatch.setattr("server.jobs.APPROVAL_TTL_SECONDS", 0)
+    manager, _ = make_manager(db, [RunResult(ok=True, short="plan", full="plan", session_id="s-1")])
+    job_id = await manager.submit(PROJECT, "arregla el typo", mode="write", thread="new")
+    await manager.wait_idle()
+    await asyncio.sleep(0.01)
+    with pytest.raises(NotApprovable):
+        await manager.approve(job_id, PROJECT)
+    assert db.get_job(job_id)["status"] == "cancelled"
+
+
+@pytest.mark.anyio
+async def test_expired_approval_runs_nothing(db, monkeypatch):
+    """Caducar no debe ejecutar el plan por accidente."""
+    monkeypatch.setattr("server.jobs.APPROVAL_TTL_SECONDS", 0)
+    manager, calls = make_manager(db, [
+        RunResult(ok=True, short="plan", full="plan", session_id="s-1"),
+        RunResult(ok=True, short="NO DEBERIA CORRER", full="x", session_id="s-1"),
+    ])
+    job_id = await manager.submit(PROJECT, "arregla el typo", mode="write", thread="new")
+    await manager.wait_idle()
+    await asyncio.sleep(0.01)
+    with pytest.raises(NotApprovable):
+        await manager.approve(job_id, PROJECT)
+    assert len(calls) == 1
+
+
+@pytest.mark.anyio
+async def test_cancel_marks_job_cancelled(db):
+    gate = asyncio.Event()
+    manager, _ = make_manager(db, [RunResult(ok=True, short="ok", full="ok")], gate=gate)
+    job_id = await manager.submit(PROJECT, "que tal", mode="read", thread="new")
+    await manager.cancel(job_id)
+    gate.set()
+    assert db.get_job(job_id)["status"] == "cancelled"
+    assert manager.busy is False
+
+
+@pytest.mark.anyio
+async def test_cancel_frees_the_slot(db):
+    gate = asyncio.Event()
+    manager, _ = make_manager(db, [
+        RunResult(ok=True, short="a", full="a"),
+        RunResult(ok=True, short="b", full="b"),
+    ], gate=gate)
+    first = await manager.submit(PROJECT, "primera", mode="read", thread="new")
+    await manager.cancel(first)
+    gate.set()
+    second = await manager.submit(PROJECT, "segunda", mode="read", thread="new")
+    await manager.wait_idle()
+    assert db.get_job(second)["status"] == "done"
+
+
+@pytest.mark.anyio
+async def test_cancelling_an_old_job_does_not_kill_the_current_one(db):
+    """El id viejo que quedo en _current_job_id no debe tumbar al job en curso."""
+    manager, _ = make_manager(db, [
+        RunResult(ok=True, short="a", full="a"),
+        RunResult(ok=True, short="b", full="b"),
+    ])
+    first = await manager.submit(PROJECT, "primera", mode="read", thread="new")
+    await manager.wait_idle()
+    second = await manager.submit(PROJECT, "segunda", mode="read", thread="new")
+    await manager.cancel(first)
+    await manager.wait_idle()
+    assert db.get_job(first)["status"] == "cancelled"
+    assert db.get_job(second)["status"] == "done"

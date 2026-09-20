@@ -3,13 +3,14 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from server.config import (
+    APPROVAL_TTL_SECONDS,
     MAX_ASKS_PER_HOUR,
     READ_TIMEOUT,
     THREAD_TTL_HOURS,
     WRITE_TIMEOUT,
 )
 from server.projects import Project
-from server.runner import ERROR_MAX, build_command, run_claude
+from server.runner import ERROR_MAX, EXEC_PROMPT, build_command, run_claude
 
 
 class Busy(Exception):
@@ -18,6 +19,10 @@ class Busy(Exception):
 
 class RateLimited(Exception):
     """Se han gastado las consultas de esta hora."""
+
+
+class NotApprovable(Exception):
+    """Ese job no esta esperando aprobacion, o ya ha caducado."""
 
 
 class JobManager:
@@ -81,6 +86,40 @@ class JobManager:
         """
         if self._task is not None:
             await asyncio.shield(self._task)
+
+    async def approve(self, job_id: str, project: Project) -> None:
+        """Ejecuta un plan ya aprobado por la persona.
+
+        Es el unico camino por el que este servidor modifica nada: hasta
+        aqui, la fase plan solo ha mirado.
+        """
+        job = self._db.get_job(job_id)
+        if job is None or job["status"] != "awaiting_approval":
+            raise NotApprovable()
+
+        age = datetime.now(timezone.utc) - datetime.fromisoformat(job["updated_at"])
+        if age > timedelta(seconds=APPROVAL_TTL_SECONDS):
+            self._db.update_job(
+                job_id, status="cancelled", error="El plan caduco sin aprobar"
+            )
+            raise NotApprovable()
+
+        if self.busy:
+            raise Busy()
+
+        self._db.update_job(job_id, status="running")
+        self._current_job_id = job_id
+        self._task = asyncio.create_task(
+            self._run(job_id, project, "exec", EXEC_PROMPT, job["session_id"])
+        )
+
+    async def cancel(self, job_id: str) -> None:
+        """Para un job. Si no es el que corre, solo marca la fila."""
+        if self._current_job_id == job_id and self.busy and self._task is not None:
+            self._task.cancel()
+            self._task = None
+            self._current_job_id = None
+        self._db.update_job(job_id, status="cancelled")
 
     def _session_for(self, project_id: str) -> str | None:
         row = self._db.get_thread(project_id)
