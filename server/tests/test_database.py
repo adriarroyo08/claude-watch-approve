@@ -1,7 +1,8 @@
 import os
 import tempfile
+import time
 import pytest
-from server.database import ApprovalDB
+from server.database import ApprovalDB, to_utc_iso
 
 
 @pytest.fixture
@@ -99,10 +100,49 @@ def test_count_jobs_since_normalises_other_offsets(db):
     assert db.count_jobs_since(past_in_madrid.isoformat()) == 1
 
 
-def test_count_jobs_since_treats_naive_as_utc(db):
-    db.create_job("job-1", project_id="ahorrapp", mode="read", prompt="una")
-    past = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(tzinfo=None)
-    assert db.count_jobs_since(past.isoformat()) == 1
+def test_to_utc_iso_converts_other_offsets():
+    assert to_utc_iso("2026-09-20T15:42:53+02:00") == "2026-09-20T13:42:53+00:00"
+
+
+@pytest.fixture
+def local_time_in_madrid():
+    """Pone el huso del sistema en UTC+2 mientras dura el test.
+
+    En una maquina en UTC, `naive.astimezone(utc)` da el mismo resultado
+    que tratar la marca como UTC, asi que el test no podria distinguir si
+    el guard de to_utc_iso existe. Con el reloj local en Madrid las dos
+    lecturas difieren y el test si muerde.
+    """
+    previous = os.environ.get("TZ")
+    os.environ["TZ"] = "Europe/Madrid"
+    time.tzset()
+    yield
+    if previous is None:
+        os.environ.pop("TZ", None)
+    else:
+        os.environ["TZ"] = previous
+    time.tzset()
+
+
+def test_to_utc_iso_treats_naive_as_utc(local_time_in_madrid):
+    assert to_utc_iso("2026-09-20T13:42:53") == "2026-09-20T13:42:53+00:00"
+
+
+def test_to_utc_iso_leaves_utc_untouched():
+    assert to_utc_iso("2026-09-20T13:42:53+00:00") == "2026-09-20T13:42:53+00:00"
+
+
+def test_update_job_rejects_unknown_field(db):
+    db.create_job("job-1", project_id="ahorrapp", mode="read", prompt="que tal")
+    with pytest.raises(ValueError):
+        db.update_job("job-1", bogus_column="x")
+
+
+def test_update_job_rejects_sql_shaped_field_name(db):
+    db.create_job("job-1", project_id="ahorrapp", mode="read", prompt="que tal")
+    with pytest.raises(ValueError):
+        db.update_job("job-1", **{"status = 'pwned' --": "x"})
+    assert db.get_job("job-1")["status"] == "running"
 
 
 def test_thread_roundtrip(db):

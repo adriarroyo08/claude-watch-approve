@@ -2,6 +2,20 @@ import sqlite3
 from datetime import datetime, timezone
 
 
+def to_utc_iso(iso_timestamp: str) -> str:
+    """Normaliza una marca ISO a UTC.
+
+    Las marcas se guardan como texto y se comparan como texto, asi que dos
+    representaciones del mismo instante en husos distintos ordenarian mal.
+    Una marca sin huso se toma como UTC, porque todo lo que escribe esta
+    clase es UTC.
+    """
+    parsed = datetime.fromisoformat(iso_timestamp)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).isoformat()
+
+
 class ApprovalDB:
     def __init__(self, db_path: str):
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -51,6 +65,12 @@ class ApprovalDB:
         rows = self._conn.execute("SELECT fcm_token FROM devices").fetchall()
         return [row["fcm_token"] for row in rows]
 
+    # Contrato que la base NO impone y que jobs.py debe cumplir:
+    #   status 'done'              -> short_text y full_text no nulos
+    #   status 'awaiting_approval' -> plan y session_id no nulos
+    #   status 'error'             -> error no nulo
+    # update_job tampoco compara-y-cambia: dos escritores sobre el mismo job
+    # se pisan en silencio. Solo es seguro porque jobs.py corre uno cada vez.
     _JOB_FIELDS = (
         "status", "short_text", "full_text", "plan", "error", "session_id",
     )
@@ -93,18 +113,10 @@ class ApprovalDB:
         self._conn.commit()
 
     def count_jobs_since(self, iso_timestamp: str) -> int:
-        """Cuenta los jobs creados desde ese instante.
-
-        Normaliza a UTC antes de comparar: las marcas se guardan como texto
-        y una comparacion de cadenas con otro huso daria un resultado
-        silenciosamente equivocado.
-        """
-        since = datetime.fromisoformat(iso_timestamp)
-        if since.tzinfo is None:
-            since = since.replace(tzinfo=timezone.utc)
+        """Cuenta los jobs creados desde ese instante."""
         row = self._conn.execute(
             "SELECT COUNT(*) AS n FROM jobs WHERE created_at >= ?",
-            (since.astimezone(timezone.utc).isoformat(),),
+            (to_utc_iso(iso_timestamp),),
         ).fetchone()
         return row["n"]
 
