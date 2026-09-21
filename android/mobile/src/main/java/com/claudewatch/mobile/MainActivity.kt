@@ -22,16 +22,27 @@ class MainActivity : ComponentActivity() {
         setContent {
             val serverUrl by settingsStore.serverUrl.collectAsState(initial = "")
             val apiKey by settingsStore.apiKey.collectAsState(initial = "")
+            val askKey by settingsStore.askKey.collectAsState(initial = "")
             var registrationStatus by remember { mutableStateOf("") }
 
             SettingsScreen(
                 serverUrl = serverUrl,
                 apiKey = apiKey,
+                askKey = askKey,
                 onSaveServerUrl = { url ->
                     scope.launch { settingsStore.saveServerUrl(url) }
                 },
                 onSaveApiKey = { key ->
                     scope.launch { settingsStore.saveApiKey(key) }
+                },
+                onSaveAskKey = { url, key ->
+                    scope.launch {
+                        settingsStore.saveAskKey(key)
+                        // No mandar una clave vacia: borraria una buena en el reloj.
+                        if (key.isNotBlank()) {
+                            DataLayerSender.sendConfig(this@MainActivity, url, key)
+                        }
+                    }
                 },
                 onRegisterDevice = {
                     scope.launch {

@@ -11,13 +11,16 @@ import androidx.compose.ui.unit.dp
 fun SettingsScreen(
     serverUrl: String,
     apiKey: String,
+    askKey: String,
     onSaveServerUrl: (String) -> Unit,
     onSaveApiKey: (String) -> Unit,
+    onSaveAskKey: (url: String, askKey: String) -> Unit,
     onRegisterDevice: () -> Unit,
     registrationStatus: String,
 ) {
     var urlField by remember(serverUrl) { mutableStateOf(serverUrl) }
     var keyField by remember(apiKey) { mutableStateOf(apiKey) }
+    var askKeyField by remember(askKey) { mutableStateOf(askKey) }
 
     Column(
         modifier = Modifier
@@ -45,10 +48,20 @@ fun SettingsScreen(
             visualTransformation = PasswordVisualTransformation(),
         )
 
+        OutlinedTextField(
+            value = askKeyField,
+            onValueChange = { askKeyField = it },
+            label = { Text("Clave del reloj") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+        )
+
         Button(
             onClick = {
                 onSaveServerUrl(urlField)
                 onSaveApiKey(keyField)
+                onSaveAskKey(urlField, askKeyField)
             },
             modifier = Modifier.fillMaxWidth(),
         ) {
