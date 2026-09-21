@@ -190,18 +190,45 @@ async def test_run_claude_times_out_and_kills(tmp_path):
     assert "demasiado" in result.error
 
 
+def _is_alive(pid: int) -> bool:
+    """Vivo de verdad: existe y no es un zombi pendiente de recoger."""
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            estado = f.read().rsplit(") ", 1)[1][0]
+    except FileNotFoundError:
+        return False
+    return estado != "Z"
+
+
 @pytest.mark.anyio
 async def test_run_claude_kills_the_child_when_cancelled(tmp_path):
+    """Comprueba SU nieto, no cualquier sleep de la maquina.
+
+    La version anterior miraba 'pgrep -x sleep' en todo el sistema, asi que
+    un sleep de otra sesion o de un cron la ponia roja con el codigo bien.
+    El sleep va en segundo plano para ser nieto del proceso lanzado: es el
+    caso que obligo a matar el grupo entero en vez de solo al hijo.
+    """
     import asyncio as aio
-    script = _fake_claude(tmp_path, "sleep 30\n")
+    pidfile = tmp_path / "nieto.pid"
+    script = _fake_claude(tmp_path, f"sleep 30 &\necho $! > {pidfile}\nwait\n")
     task = aio.create_task(run_claude([script], cwd=str(tmp_path), timeout=60))
-    await aio.sleep(0.3)          # deja que arranque de verdad
+    for _ in range(50):           # espera a que el nieto exista de verdad
+        if pidfile.exists() and pidfile.read_text().strip():
+            break
+        await aio.sleep(0.05)
+    nieto = int(pidfile.read_text().strip())
+    assert _is_alive(nieto), "el nieto no llego a arrancar: el test no probaria nada"
+
     task.cancel()
     with pytest.raises(aio.CancelledError):
         await task
-    await aio.sleep(0.3)          # deja que el kill surta efecto
-    survivors = os.popen("pgrep -x sleep").read().strip()
-    assert survivors == "", f"quedo un proceso vivo: {survivors}"
+
+    for _ in range(40):           # hasta 2 s para que el kill surta efecto
+        if not _is_alive(nieto):
+            break
+        await aio.sleep(0.05)
+    assert not _is_alive(nieto), f"el nieto {nieto} sigue vivo tras cancelar"
 
 
 @pytest.mark.anyio
