@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.Wearable
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -66,6 +67,7 @@ class AskViewModel(app: Application) : AndroidViewModel(app) {
             items.release()
         }
     } catch (e: Exception) {
+        if (e is CancellationException) throw e
         null
     }
 
@@ -99,6 +101,7 @@ class AskViewModel(app: Application) : AndroidViewModel(app) {
                 ?: fetched.first()
             resumePendingJobOrShowComposing()
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             _state.value = AskState.Failed(messageFor(e, "Sin conexion con el servidor"))
         }
     }
@@ -159,6 +162,7 @@ class AskViewModel(app: Application) : AndroidViewModel(app) {
                 _state.value = AskState.Thinking(accepted.job_id, seconds = 0)
                 poll(accepted.job_id)
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 _state.value = AskState.Failed(messageFor(e, "Sin conexion"))
             }
         }
@@ -176,6 +180,9 @@ class AskViewModel(app: Application) : AndroidViewModel(app) {
                 val job = try {
                     client.job(jobId, key)
                 } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    // Corte de red pasajero: el job pendiente NO se limpia,
+                    // asi que "Reintentar" -> start() lo retoma donde se quedo.
                     _state.value = AskState.Failed(messageFor(e, "Sin conexion"))
                     return@launch
                 }
@@ -220,12 +227,15 @@ class AskViewModel(app: Application) : AndroidViewModel(app) {
         val current = _state.value as? AskState.AwaitingApproval ?: return
         val client = api ?: return
         val key = settings?.apiKey ?: return
+        // Se fija el estado antes de llamar a la red: una segunda pulsacion
+        // rapida ya no encuentra AwaitingApproval y no reenvia la aprobacion.
+        _state.value = AskState.Thinking(current.jobId, seconds = 0)
         viewModelScope.launch {
             try {
                 client.approve(current.jobId, key)
-                _state.value = AskState.Thinking(current.jobId, seconds = 0)
                 poll(current.jobId)
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 _state.value = AskState.Failed(messageFor(e, "No se pudo aprobar"))
             }
         }
@@ -246,13 +256,27 @@ class AskViewModel(app: Application) : AndroidViewModel(app) {
         pollJob?.cancel()
         val client = api ?: return
         val key = settings?.apiKey ?: return
+        // Se abandona el estado que tenia el boton Cancelar antes de llamar
+        // a la red: una segunda pulsacion rapida ya no encuentra Thinking ni
+        // AwaitingApproval y no reenvia el cancel.
+        showComposing()
         viewModelScope.launch {
             val status = try {
                 client.cancel(jobId, key).status
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 null
             }
-            if (status == "done") poll(jobId) else showComposing()
+            when (status) {
+                "done" -> poll(jobId)
+                null -> {
+                    // La llamada de cancelar fallo por red: no se sabe si el
+                    // trabajo se cancelo de verdad, asi que se deja el job
+                    // pendiente para poder retomarlo la proxima vez que se
+                    // abra el reloj.
+                }
+                else -> WatchConfig.clearPendingJob(getApplication())
+            }
         }
     }
 
