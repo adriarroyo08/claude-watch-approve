@@ -23,10 +23,13 @@ object DataLayerSender {
         Wearable.getDataClient(context).putDataItem(request).await()
     }
 
-    suspend fun sendConfig(context: Context, baseUrl: String, apiKey: String) {
+    suspend fun sendConfig(context: Context, baseUrl: String, watchKey: String) {
         val request = PutDataMapRequest.create(CONFIG_PATH).apply {
             dataMap.putString("base_url", baseUrl)
-            dataMap.putString("api_key", apiKey)
+            // Nombre distinto al "api_key" del hook a proposito: son claves
+            // distintas, y una futura edicion que las confunda debe fallar
+            // al leer, no compilar en silencio con la clave equivocada.
+            dataMap.putString("watch_key", watchKey)
             dataMap.putLong("timestamp", System.currentTimeMillis())
         }.asPutDataRequest().setUrgent()
 

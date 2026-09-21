@@ -58,7 +58,7 @@ class AskViewModel(app: Application) : AndroidViewModel(app) {
             items.firstOrNull()?.let { item ->
                 val map = DataMapItem.fromDataItem(item).dataMap
                 val url = map.getString("base_url").orEmpty()
-                val key = map.getString("api_key").orEmpty()
+                val key = map.getString("watch_key").orEmpty()
                 WatchSettings(url, key).takeIf { it.isUsable }?.also {
                     WatchConfig.save(getApplication(), url, key)
                 }
@@ -300,5 +300,16 @@ class AskViewModel(app: Application) : AndroidViewModel(app) {
         pollJob?.cancel()
         viewModelScope.launch { WatchConfig.clearPendingJob(getApplication()) }
         showComposing(canFollowUp = true)
+    }
+
+    /** Pantalla apagada o app en segundo plano: no sondear. El trabajo sigue
+     *  guardado y se retoma al volver. */
+    fun onBackground() {
+        pollJob?.cancel()
+    }
+
+    fun onForeground() {
+        val current = _state.value
+        if (current is AskState.Thinking) poll(current.jobId)
     }
 }

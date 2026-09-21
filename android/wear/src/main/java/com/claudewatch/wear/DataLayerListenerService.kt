@@ -31,7 +31,7 @@ class DataLayerListenerService : WearableListenerService() {
                 "/claude-watch/config" -> {
                     val dataMap = DataMapItem.fromDataItem(event.dataItem).dataMap
                     val baseUrl = dataMap.getString("base_url") ?: return@forEach
-                    val apiKey = dataMap.getString("api_key") ?: return@forEach
+                    val apiKey = dataMap.getString("watch_key") ?: return@forEach
 
                     Log.d("ClaudeWatch", "Config received: $baseUrl")
 

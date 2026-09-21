@@ -7,10 +7,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.runtime.*
 import androidx.core.app.RemoteInput as CoreRemoteInput
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.input.RemoteInputIntentHelper
 import com.claudewatch.wear.ask.ui.*
 
@@ -18,10 +18,13 @@ private const val PROMPT_KEY = "prompt"
 
 class AskActivity : ComponentActivity() {
 
+    // A nivel de Activity para que onStart/onStop puedan pausar y retomar
+    // el sondeo sin depender de que la composicion siga viva.
+    private val model: AskViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            val model: AskViewModel = viewModel()
             val state by model.state.collectAsStateWithLifecycle()
             var pickingProject by remember { mutableStateOf(false) }
             var followUp by remember { mutableStateOf(false) }
@@ -92,5 +95,18 @@ class AskActivity : ComponentActivity() {
                     FailedScreen(current.message) { model.start() }
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // No hace nada en el primer arranque: el estado por defecto es
+        // Composing, y solo start() (en LaunchedEffect) decide si hay que
+        // retomar un job pendiente.
+        model.onForeground()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        model.onBackground()
     }
 }
