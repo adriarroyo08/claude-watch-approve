@@ -33,6 +33,13 @@
                     android:host="*"
                     android:pathPrefix="/claude-approval/request"
                     android:scheme="wear" />
+                <!-- Sin esto el servicio nunca despierta para /claude-watch/config:
+                     la configuracion que manda el movil no llegaria con la app
+                     del reloj cerrada, y el reloj se quedaria sin URL ni clave. -->
+                <data
+                    android:host="*"
+                    android:pathPrefix="/claude-watch"
+                    android:scheme="wear" />
             </intent-filter>
         </service>
 
