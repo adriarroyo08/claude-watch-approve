@@ -38,9 +38,14 @@ class MainActivity : ComponentActivity() {
                 onSaveAskKey = { url, key ->
                     scope.launch {
                         settingsStore.saveAskKey(key)
-                        // No mandar una clave vacia: borraria una buena en el reloj.
-                        if (key.isNotBlank()) {
-                            DataLayerSender.sendConfig(this@MainActivity, url, key)
+                        // No mandar una URL o una clave vacia: cualquiera de
+                        // las dos desactivaria el reloj en silencio.
+                        if (url.isNotBlank() && key.isNotBlank()) {
+                            // Envuelto en runCatching: si putDataItem falla
+                            // (Play Services no disponible), no debe
+                            // cancelar este scope compartido y silenciar
+                            // "Register Device" despues.
+                            runCatching { DataLayerSender.sendConfig(this@MainActivity, url, key) }
                         }
                     }
                 },
