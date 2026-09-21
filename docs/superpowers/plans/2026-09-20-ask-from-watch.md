@@ -2053,6 +2053,15 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 ## Task 10: Dependencias y permisos del reloj
 
+> **Nota posterior:** el código Android de las Tasks 10–15, de aquí en adelante, es
+> el borrador original tal y como se escribió en este plan, sin compilar. La
+> implementación real difiere en varios puntos — algunos porque el borrador
+> nombraba APIs que no existen en las versiones de librería del proyecto (un
+> `Button` de Wear Material, un `Switch` independiente,
+> `RemoteInput.ACTION_REMOTE_INPUT`). Cada desviación queda registrada en los
+> mensajes de commit a partir de `c27b9c7`; ese es el historial que hay que leer
+> para saber qué se construyó de verdad, no las tareas de abajo.
+
 A partir de aquí no hay tests: el proyecto no tiene ninguno en Android y **el APK no
 se puede compilar en esta máquina** (el `aapt2` de Gradle es x86-64, la máquina es
 aarch64). La verificación de cada tarea Android es "el CI compila" y, al final, la
