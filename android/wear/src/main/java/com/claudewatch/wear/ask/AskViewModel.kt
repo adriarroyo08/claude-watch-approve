@@ -97,9 +97,24 @@ class AskViewModel(app: Application) : AndroidViewModel(app) {
             projects = fetched
             selected = selected?.let { prev -> fetched.firstOrNull { it.id == prev.id } }
                 ?: fetched.first()
-            showComposing()
+            resumePendingJobOrShowComposing()
         } catch (e: Exception) {
             _state.value = AskState.Failed(messageFor(e, "Sin conexion con el servidor"))
+        }
+    }
+
+    /**
+     * Si quedo un job pendiente de una sesion anterior (corte de red,
+     * proceso matado, o la persona salio con un plan esperando aprobacion),
+     * se retoma en vez de empezar de cero y perder la respuesta.
+     */
+    private suspend fun resumePendingJobOrShowComposing() {
+        val pending = WatchConfig.loadPendingJob(getApplication())
+        if (pending != null) {
+            _state.value = AskState.Thinking(pending, seconds = 0)
+            poll(pending)
+        } else {
+            showComposing()
         }
     }
 
@@ -137,6 +152,10 @@ class AskViewModel(app: Application) : AndroidViewModel(app) {
                     ),
                     key,
                 )
+                // Se guarda antes de sondear: si la red se corta a mitad o
+                // Wear OS mata el proceso, al reabrir se retoma este job en
+                // vez de perder la respuesta.
+                WatchConfig.savePendingJob(getApplication(), accepted.job_id)
                 _state.value = AskState.Thinking(accepted.job_id, seconds = 0)
                 poll(accepted.job_id)
             } catch (e: Exception) {
@@ -164,6 +183,9 @@ class AskViewModel(app: Application) : AndroidViewModel(app) {
                     "running" -> _state.value = AskState.Thinking(jobId, seconds)
                     "awaiting_approval" -> {
                         _state.value = AskState.AwaitingApproval(jobId, job.plan.orEmpty())
+                        // No se limpia el job pendiente: la persona puede
+                        // irse y volver dentro de la ventana de 5 minutos
+                        // para aprobar.
                         return@launch
                     }
                     "done" -> {
@@ -172,13 +194,20 @@ class AskViewModel(app: Application) : AndroidViewModel(app) {
                             short = job.short.orEmpty(),
                             full = job.full.orEmpty(),
                         )
+                        // Se limpia DESPUES de fijar Answered: reabrir una
+                        // vez todavia ensena la respuesta a traves del
+                        // estado en memoria; la siguiente apertura ya
+                        // empieza de cero.
+                        WatchConfig.clearPendingJob(getApplication())
                         return@launch
                     }
                     "cancelled" -> {
+                        WatchConfig.clearPendingJob(getApplication())
                         showComposing()
                         return@launch
                     }
                     else -> {
+                        WatchConfig.clearPendingJob(getApplication())
                         _state.value = AskState.Failed(job.error ?: "Error")
                         return@launch
                     }
@@ -245,6 +274,7 @@ class AskViewModel(app: Application) : AndroidViewModel(app) {
     /** Vuelve a la pantalla de preguntar dejando repreguntar sobre el mismo hilo. */
     fun prepareFollowUp() {
         pollJob?.cancel()
+        viewModelScope.launch { WatchConfig.clearPendingJob(getApplication()) }
         showComposing(canFollowUp = true)
     }
 }

@@ -16,6 +16,7 @@ data class WatchSettings(val baseUrl: String, val apiKey: String) {
 object WatchConfig {
     private val URL = stringPreferencesKey("base_url")
     private val KEY = stringPreferencesKey("api_key")
+    private val PENDING_JOB = stringPreferencesKey("pending_job")
 
     suspend fun save(context: Context, baseUrl: String, apiKey: String) {
         context.configStore.edit { prefs ->
@@ -27,5 +28,18 @@ object WatchConfig {
     suspend fun load(context: Context): WatchSettings {
         val prefs = context.configStore.data.first()
         return WatchSettings(baseUrl = prefs[URL] ?: "", apiKey = prefs[KEY] ?: "")
+    }
+
+    /** El trabajo cuyo resultado la persona todavia no ha visto. Sobrevive a
+     *  cortes de red y a que Wear OS mate el proceso. */
+    suspend fun savePendingJob(context: Context, jobId: String) {
+        context.configStore.edit { it[PENDING_JOB] = jobId }
+    }
+
+    suspend fun loadPendingJob(context: Context): String? =
+        context.configStore.data.first()[PENDING_JOB]
+
+    suspend fun clearPendingJob(context: Context) {
+        context.configStore.edit { it.remove(PENDING_JOB) }
     }
 }
