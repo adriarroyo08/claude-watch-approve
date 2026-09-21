@@ -104,9 +104,12 @@ Estos pasos son para cuando esta rama se fusione a `main`. **No se han ejecutado
 # 1. Generar la clave del reloj
 python3 -c "import secrets; print(secrets.token_urlsafe(32))"
 
-# 2. Ponerla en server/claude-watch.service, sustituyendo
-#    PON_AQUI_LA_CLAVE_DEL_RELOJ, y anadir el resto de proyectos
-#    a CLAUDE_WATCH_PROJECTS si hace falta.
+# 2. Ponerla en /etc/claude-watch.env, NUNCA en la unit file: esa esta en
+#    git y el repositorio es publico. Usa server/claude-watch.env.example
+#    como plantilla y dejalo en root:root con permisos 600:
+sudo install -m 600 -o root -g root server/claude-watch.env.example /etc/claude-watch.env
+sudo nano /etc/claude-watch.env
+#    Anade el resto de proyectos a CLAUDE_WATCH_PROJECTS en la unit si hace falta.
 
 # 3. Copiar la unit file y recargar systemd
 sudo cp server/claude-watch.service /etc/systemd/system/claude-watch.service
@@ -118,6 +121,16 @@ curl -H "X-Api-Key: <la clave generada>" https://claude-watch.automatito.win/pro
 ```
 
 Aviso: reiniciar el servicio interrumpe brevemente el camino de las notificaciones (`/notify`) mientras uvicorn vuelve a arrancar.
+
+### Por que los secretos van en `/etc/claude-watch.env`
+
+Desde el 2026-04-21 la clave del hook estuvo escrita dentro de
+`server/claude-watch.service`, que esta en git. El repositorio es publico, asi
+que la clave de produccion quedo publicada. Con ella cualquiera puede registrar
+su propio token en `/register-device` y recibir todos los resumenes de sesion de
+Claude Code. Quitarla del fichero no basta, porque sigue en el historial: hay
+que rotarla. Por eso los secretos van a un `EnvironmentFile` fuera del
+repositorio y la unit file solo guarda la referencia.
 
 ### Como verificar que el modo lectura es de verdad de solo lectura
 
