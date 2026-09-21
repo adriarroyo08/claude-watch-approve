@@ -24,6 +24,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ask.AskActivity"
+            android:exported="false"
+            android:label="Preguntar" />
+
         <service
             android:name=".DataLayerListenerService"
             android:exported="true">

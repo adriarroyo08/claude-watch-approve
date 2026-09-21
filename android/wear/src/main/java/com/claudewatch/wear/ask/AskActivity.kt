@@ -1,0 +1,96 @@
+package com.claudewatch.wear.ask
+
+import android.app.Activity
+import android.app.RemoteInput
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.*
+import androidx.core.app.RemoteInput as CoreRemoteInput
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.wear.input.RemoteInputIntentHelper
+import com.claudewatch.wear.ask.ui.*
+
+private const val PROMPT_KEY = "prompt"
+
+class AskActivity : ComponentActivity() {
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            val model: AskViewModel = viewModel()
+            val state by model.state.collectAsStateWithLifecycle()
+            var pickingProject by remember { mutableStateOf(false) }
+            var followUp by remember { mutableStateOf(false) }
+
+            LaunchedEffect(Unit) { model.start() }
+
+            val dictate = rememberLauncherForActivityResult(
+                ActivityResultContracts.StartActivityForResult()
+            ) { result ->
+                if (result.resultCode != Activity.RESULT_OK) return@rememberLauncherForActivityResult
+                val data = result.data ?: return@rememberLauncherForActivityResult
+                val spoken = CoreRemoteInput.getResultsFromIntent(data)
+                    ?.getCharSequence(PROMPT_KEY)?.toString()?.trim()
+                if (!spoken.isNullOrEmpty()) {
+                    model.send(spoken, followUp = followUp)
+                    followUp = false
+                }
+            }
+
+            fun askForText() {
+                val remoteInput = RemoteInput.Builder(PROMPT_KEY)
+                    .setLabel("Pregunta a Claude")
+                    .build()
+                val intent = RemoteInputIntentHelper.createActionRemoteInputIntent()
+                RemoteInputIntentHelper.putRemoteInputsExtra(intent, listOf(remoteInput))
+                dictate.launch(intent)
+            }
+
+            when (val current = state) {
+                is AskState.Composing ->
+                    if (pickingProject) {
+                        ProjectPickerScreen(current.projects) { project ->
+                            model.selectProject(project)
+                            pickingProject = false
+                        }
+                    } else {
+                        ComposingScreen(
+                            state = current,
+                            onPickProject = { pickingProject = true },
+                            onToggleWrite = { model.toggleWriteMode() },
+                            onDictate = { askForText() },
+                        )
+                    }
+
+                is AskState.Thinking ->
+                    ThinkingScreen(current.seconds) { model.cancel() }
+
+                is AskState.AwaitingApproval ->
+                    PlanScreen(
+                        plan = current.plan,
+                        onApprove = { model.approve() },
+                        onCancel = { model.cancel() },
+                    )
+
+                is AskState.Answered ->
+                    AnswerScreen(
+                        state = current,
+                        onExpand = { model.expand() },
+                        onToPhone = { model.sendToPhone() },
+                        onFollowUp = {
+                            followUp = true
+                            model.prepareFollowUp()
+                            askForText()
+                        },
+                    )
+
+                is AskState.Failed ->
+                    FailedScreen(current.message) { model.start() }
+            }
+        }
+    }
+}

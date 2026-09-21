@@ -64,7 +64,7 @@ fun SummaryScreen(
 }
 
 @Composable
-fun WaitingScreen() {
+fun WaitingScreen(onAsk: () -> Unit) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -82,6 +82,12 @@ fun WaitingScreen() {
                 text = "Waiting for summaries...",
                 style = MaterialTheme.typography.body2,
                 color = Color.Gray,
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Chip(
+                onClick = onAsk,
+                label = { Text("Preguntar") },
+                colors = ChipDefaults.primaryChipColors(),
             )
         }
     }

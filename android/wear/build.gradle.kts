@@ -41,6 +41,9 @@ dependencies {
     // Wearable Data Layer
     implementation(libs.play.services.wearable)
 
+    // Selector del sistema con voz, teclado, escritura a mano y frases guardadas
+    implementation(libs.wear.input)
+
     // Tiles
     implementation(libs.tiles)
     implementation(libs.tiles.material)
