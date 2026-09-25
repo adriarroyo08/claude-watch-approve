@@ -27,7 +27,6 @@ class AskActivity : ComponentActivity() {
         setContent {
             val state by model.state.collectAsStateWithLifecycle()
             var pickingProject by remember { mutableStateOf(false) }
-            var followUp by remember { mutableStateOf(false) }
 
             LaunchedEffect(Unit) { model.start() }
 
@@ -38,9 +37,12 @@ class AskActivity : ComponentActivity() {
                 val data = result.data ?: return@rememberLauncherForActivityResult
                 val spoken = CoreRemoteInput.getResultsFromIntent(data)
                     ?.getCharSequence(PROMPT_KEY)?.toString()?.trim()
+                // Se lee del estado y no de una variable propia: asi coincide
+                // siempre con lo que ensena la pantalla, aunque se cancelara
+                // el dictado y despues se cambiara de proyecto o de modo.
+                val followUp = (model.state.value as? AskState.Composing)?.canFollowUp == true
                 if (!spoken.isNullOrEmpty()) {
                     model.send(spoken, followUp = followUp)
-                    followUp = false
                 }
             }
 
@@ -85,7 +87,6 @@ class AskActivity : ComponentActivity() {
                         onExpand = { model.expand() },
                         onToPhone = { model.sendToPhone() },
                         onFollowUp = {
-                            followUp = true
                             model.prepareFollowUp()
                             askForText()
                         },
