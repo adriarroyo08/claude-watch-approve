@@ -200,6 +200,15 @@ class JobManager:
             return
 
         if phase == "plan":
+            # Sin sesion, aprobar lanzaria la fase exec con escritura en una
+            # sesion nueva que no conoce el plan.
+            if not result.session_id:
+                self._db.update_job(
+                    job_id,
+                    status="error",
+                    error="El plan llego sin sesion; no se puede aprobar",
+                )
+                return
             self._db.update_job(
                 job_id,
                 status="awaiting_approval",

@@ -172,6 +172,17 @@ async def test_write_job_reaches_awaiting_approval(db):
 
 
 @pytest.mark.anyio
+async def test_plan_without_session_is_an_error_not_approvable(db):
+    manager, _ = make_manager(db, [RunResult(ok=True, short="plan", full="plan")])
+    job_id = await manager.submit(PROJECT, "arregla el typo", mode="write", thread="new")
+    await manager.wait_idle()
+    job = db.get_job(job_id)
+    assert job["status"] == "error"
+    with pytest.raises(NotApprovable):
+        await manager.approve(job_id, PROJECT)
+
+
+@pytest.mark.anyio
 async def test_rate_limit_blocks_after_max(db, monkeypatch):
     monkeypatch.setattr("server.jobs.MAX_ASKS_PER_HOUR", 2)
     manager, calls = make_manager(db, [
