@@ -19,12 +19,13 @@ EXEC_PROMPT = "Ejecuta el plan que acabas de describir."
 # LIMITE DE SEGURIDAD. Esta lista es lo unico que impide que el modo lectura
 # escriba: con --permission-prompts none, cualquier herramienta que no este
 # aqui se deniega sola. Ampliarla es una decision deliberada, no un retoque.
+# Sin git log ni git diff: los dos aceptan --output=<fichero> y con eso el
+# modo lectura escribia donde quisiera. Un prefijo Bash(...:*) no puede
+# prohibir un flag, asi que se quitan enteros.
 READ_TOOLS = (
     "Read",
     "Grep",
     "Glob",
-    "Bash(git log:*)",
-    "Bash(git diff:*)",
     "Bash(git status:*)",
 )
 

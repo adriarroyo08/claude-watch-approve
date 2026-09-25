@@ -29,9 +29,16 @@ def test_read_command_whitelists_read_only_tools():
     cmd = build_command("read", "que tal")
     tools = _flag_values(cmd, "--allowedTools")
     assert "Read" in tools
-    assert "Bash(git log:*)" in tools
+    assert "Bash(git status:*)" in tools
     assert "Edit" not in tools
     assert "Write" not in tools
+
+
+def test_read_command_allows_no_git_command_that_writes_files():
+    # git log y git diff aceptan --output=<fichero>: con ellos el modo
+    # lectura podia escribir en cualquier ruta.
+    tools = _flag_values(build_command("read", "que tal"), "--allowedTools")
+    assert not any(t.startswith(("Bash(git log", "Bash(git diff")) for t in tools)
 
 
 def test_read_command_has_no_permission_mode():
