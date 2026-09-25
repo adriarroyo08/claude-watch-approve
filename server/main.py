@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from server.config import API_KEY, ASK_KEY, DB_PATH, PROJECTS
 from server.database import ApprovalDB
-from server.fcm import send_info_notification
+from server.fcm import send_full_text, send_info_notification
 from server.jobs import Busy, JobManager, NotApprovable, RateLimited
 
 db = ApprovalDB(DB_PATH)
@@ -202,12 +202,10 @@ def send_ask_to_phone(job_id: str):
     if not job["full_text"]:
         raise HTTPException(status_code=409, detail="Todavia no hay respuesta")
     tokens = db.get_device_tokens()
-    try:
-        send_info_notification(
-            tokens=tokens,
-            tool_name="Respuesta",
-            message=job["full_text"],
-        )
-    except Exception:
-        pass
-    return {"status": "sent", "devices": len(tokens)}
+    if not tokens:
+        raise HTTPException(status_code=409, detail="No hay ningun movil registrado")
+    delivered = send_full_text(tokens=tokens, title="Respuesta", text=job["full_text"])
+    # El reloj solo debe ensenar "Enviado" si llego a algun movil de verdad.
+    if delivered == 0:
+        raise HTTPException(status_code=502, detail="No se pudo enviar al movil")
+    return {"status": "sent", "devices": delivered}

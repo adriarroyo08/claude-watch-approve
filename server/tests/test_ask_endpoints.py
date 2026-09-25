@@ -483,15 +483,40 @@ async def test_to_phone_sends_the_full_text(watch_headers, hook_headers):
             )
             job_id = resp.json()["job_id"]
             await job_manager.wait_idle()
-            with patch("server.main.send_info_notification", return_value=True) as mock_send:
+            with patch("server.main.send_full_text", return_value=1) as mock_send:
                 sent = await http.post(f"/ask/{job_id}/to-phone", headers=watch_headers)
 
     assert sent.status_code == 200
     mock_send.assert_called_once_with(
         tokens=["device-token-xyz"],
-        tool_name="Respuesta",
-        message="Corto.\n\nTodo el detalle.",
+        title="Respuesta",
+        text="Corto.\n\nTodo el detalle.",
     )
+
+
+@pytest.mark.anyio
+async def test_to_phone_reports_failure_when_nothing_was_delivered(watch_headers, hook_headers):
+    async def fake_runner(cmd, cwd, timeout):
+        return RunResult(ok=True, short="Corto.", full="Corto.\n\nTodo el detalle.")
+
+    with patch.object(job_manager, "_runner", fake_runner):
+        async with client() as http:
+            await http.post(
+                "/register-device",
+                json={"fcm_token": "device-token-xyz"},
+                headers=hook_headers,
+            )
+            resp = await http.post(
+                "/ask",
+                json={"project_id": "ahorrapp", "prompt": "que tal", "mode": "read", "thread": "new"},
+                headers=watch_headers,
+            )
+            job_id = resp.json()["job_id"]
+            await job_manager.wait_idle()
+            with patch("server.main.send_full_text", return_value=0):
+                sent = await http.post(f"/ask/{job_id}/to-phone", headers=watch_headers)
+
+    assert sent.status_code == 502
 
 
 @pytest.mark.anyio
