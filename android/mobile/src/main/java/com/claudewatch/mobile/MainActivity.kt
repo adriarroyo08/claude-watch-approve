@@ -40,7 +40,10 @@ class MainActivity : ComponentActivity() {
                         settingsStore.saveAskKey(key)
                         // No mandar una URL o una clave vacia: cualquiera de
                         // las dos desactivaria el reloj en silencio.
-                        if (url.isNotBlank() && key.isNotBlank()) {
+                        // Sin http(s):// el reloj no puede construir el
+                        // cliente: mejor no mandarla.
+                        val validUrl = url.startsWith("http://") || url.startsWith("https://")
+                        if (validUrl && key.isNotBlank()) {
                             // Envuelto en runCatching: si putDataItem falla
                             // (Play Services no disponible), no debe
                             // cancelar este scope compartido y silenciar

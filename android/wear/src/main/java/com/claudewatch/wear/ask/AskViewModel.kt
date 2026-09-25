@@ -39,8 +39,16 @@ class AskViewModel(app: Application) : AndroidViewModel(app) {
                 _state.value = AskState.Failed("Abre la app del movil y guarda la clave del reloj")
                 return@launch
             }
+            // Retrofit lanza IllegalArgumentException con una URL sin
+            // http(s)://; sin esto la app del reloj se cerraba al abrirla.
+            val client = try {
+                AskApi.create(loaded.baseUrl)
+            } catch (e: IllegalArgumentException) {
+                _state.value = AskState.Failed("URL del servidor no valida: revisala en el movil")
+                return@launch
+            }
             settings = loaded
-            api = AskApi.create(loaded.baseUrl)
+            api = client
             loadProjects()
         }
     }
