@@ -93,14 +93,16 @@ muneca.
 
 ### Dos modos, y una aprobacion de por medio
 
-- **Lectura** (por defecto) — Claude solo mira: lee archivos y ejecuta
-  `git log`/`git diff`/`git status`. Nunca escribe nada.
+- **Lectura** (por defecto) — Claude solo mira: lee y busca en los archivos y
+  puede ejecutar `git status`. Nunca escribe nada. `git log` y `git diff` no
+  estan permitidos porque aceptan `--output=<fichero>` y podrian escribir.
 - **Escritura** — Claude primero devuelve un **plan**, sin tocar nada. Tu reloj
   lo muestra con **Aprobar** / **Cancelar**. Solo si aprueba, el servidor ejecuta
   el plan y puede modificar archivos. Un plan sin aprobar caduca a los 5 minutos.
 
 La respuesta llega corta, para que quepa en la pantalla del reloj, con un boton
-"Mas" para el texto completo y "Al movil" para mandartela por notificacion push.
+"Mas" para el texto completo y "Al movil" para mandartela por notificacion push
+(hasta unos 3.500 bytes, el limite de FCM; si es mas larga llega cortada con "…").
 
 ### El coste
 

@@ -51,7 +51,7 @@ El servidor sabe a que dispositivos enviar los resumenes. Cuando configuras la a
 
 ## Preguntar al reloj (ask)
 
-Ademas de recibir resumenes, el servidor deja que el **reloj** dicte una pregunta y la mande de vuelta. El reloj elige un proyecto de una lista blanca configurada en el servidor, dicta el texto, y el servidor lanza el CLI `claude` dentro de esa carpeta para conseguir una respuesta. Hay dos modos: `read` (el CLI solo puede leer archivos y ejecutar `git log`/`git diff`/`git status`, nunca escribe nada) y `write` (primero planifica, y solo si el reloj aprueba el plan se ejecuta con permiso para editar archivos). Esto es codigo nuevo que corre procesos externos en la maquina que sostiene el tunel de cloudflared y 19 contenedores, asi que la lista de proyectos y el modo lectura son deliberadamente restrictivos.
+Ademas de recibir resumenes, el servidor deja que el **reloj** dicte una pregunta y la mande de vuelta. El reloj elige un proyecto de una lista blanca configurada en el servidor, dicta el texto, y el servidor lanza el CLI `claude` dentro de esa carpeta para conseguir una respuesta. Hay dos modos: `read` (el CLI solo puede leer y buscar en los archivos y ejecutar `git status`, nunca escribe nada; `git log` y `git diff` no se permiten porque aceptan `--output=<fichero>` y podrian escribir) y `write` (primero planifica, y solo si el reloj aprueba el plan se ejecuta con permiso para editar archivos). Esto es codigo nuevo que corre procesos externos en la maquina que sostiene el tunel de cloudflared y 19 contenedores, asi que la lista de proyectos y el modo lectura son deliberadamente restrictivos.
 
 ### Variables de entorno nuevas
 
@@ -84,7 +84,7 @@ Cada entrada es un `id` corto (lo que el reloj manda) seguido de `:` y la ruta a
 | `GET /ask/{job_id}` | — | `{"status", "short", "full", "plan", "error"}` con el estado y la respuesta del job |
 | `POST /ask/{job_id}/approve` | — | Ejecuta el plan generado en modo escritura tras la aprobacion del reloj; `{"status": "running"}`. Es el unico endpoint que puede modificar archivos |
 | `POST /ask/{job_id}/cancel` | — | Cancela el job si sigue en marcha; devuelve el estado real, no un exito falso |
-| `POST /ask/{job_id}/to-phone` | — | Reenvia la respuesta completa al movil como notificacion push; `409` si todavia no hay respuesta |
+| `POST /ask/{job_id}/to-phone` | — | Reenvia la respuesta al movil como notificacion push, hasta unos 3.500 bytes (limite de FCM; si es mas larga se corta con "…"); `409` si todavia no hay respuesta o no hay ningun movil registrado, `502` si no llego a ningun movil |
 
 Todos requieren la cabecera `X-Api-Key` con `CLAUDE_WATCH_ASK_KEY`.
 
