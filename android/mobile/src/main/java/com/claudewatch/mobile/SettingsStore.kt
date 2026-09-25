@@ -13,10 +13,12 @@ class SettingsStore(private val context: Context) {
     companion object {
         val SERVER_URL = stringPreferencesKey("server_url")
         val API_KEY = stringPreferencesKey("api_key")
+        val ASK_KEY = stringPreferencesKey("ask_key")
     }
 
     val serverUrl: Flow<String> = context.dataStore.data.map { it[SERVER_URL] ?: "" }
     val apiKey: Flow<String> = context.dataStore.data.map { it[API_KEY] ?: "" }
+    val askKey: Flow<String> = context.dataStore.data.map { it[ASK_KEY] ?: "" }
 
     suspend fun saveServerUrl(url: String) {
         context.dataStore.edit { it[SERVER_URL] = url }
@@ -24,6 +26,10 @@ class SettingsStore(private val context: Context) {
 
     suspend fun saveApiKey(key: String) {
         context.dataStore.edit { it[API_KEY] = key }
+    }
+
+    suspend fun saveAskKey(key: String) {
+        context.dataStore.edit { it[ASK_KEY] = key }
     }
 
     suspend fun getServerUrlSync(): String {
@@ -35,6 +41,12 @@ class SettingsStore(private val context: Context) {
     suspend fun getApiKeySync(): String {
         var key = ""
         context.dataStore.edit { key = it[API_KEY] ?: "" }
+        return key
+    }
+
+    suspend fun getAskKeySync(): String {
+        var key = ""
+        context.dataStore.edit { key = it[ASK_KEY] ?: "" }
         return key
     }
 }

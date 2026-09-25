@@ -1,5 +1,5 @@
 from unittest.mock import patch, MagicMock
-from server.fcm import send_info_notification
+from server.fcm import FULL_TEXT_MAX_BYTES, send_full_text, send_info_notification
 
 
 def test_send_info_notification_with_tokens():
@@ -68,3 +68,24 @@ def test_send_info_notification_truncates_long_message():
         call_kwargs = mock_messaging.Notification.call_args
         body = call_kwargs.kwargs.get("body") or call_kwargs.args[1] if call_kwargs.args else call_kwargs.kwargs["body"]
         assert len(body) == 500
+
+
+def test_send_full_text_keeps_long_text_within_fcm_limit():
+    text = "ñ" * 3000  # 6000 bytes: pasaria del limite de FCM
+    with patch("server.fcm.messaging") as mock_messaging:
+        delivered = send_full_text(tokens=["token-abc"], title="Respuesta", text=text)
+
+    assert delivered == 1
+    sent = mock_messaging.Message.call_args.kwargs["data"]["message"]
+    assert len(sent) > 500
+    assert len(sent.encode("utf-8")) <= FULL_TEXT_MAX_BYTES
+    assert sent.endswith("…")
+
+
+def test_send_full_text_keeps_going_after_a_bad_token():
+    with patch("server.fcm.messaging") as mock_messaging:
+        mock_messaging.send.side_effect = [Exception("caducado"), "ok"]
+        delivered = send_full_text(tokens=["viejo", "bueno"], title="Respuesta", text="hola")
+
+    assert delivered == 1
+    assert mock_messaging.send.call_count == 2

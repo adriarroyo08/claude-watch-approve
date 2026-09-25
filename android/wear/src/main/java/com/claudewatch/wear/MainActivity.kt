@@ -1,10 +1,12 @@
 package com.claudewatch.wear
 
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.*
+import com.claudewatch.wear.ask.AskActivity
 import com.claudewatch.wear.ui.SummaryScreen
 import com.claudewatch.wear.ui.WaitingScreen
 import com.google.android.gms.wearable.*
@@ -25,7 +27,9 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
                     onDismiss = { currentSummary = null },
                 )
             } else {
-                WaitingScreen()
+                WaitingScreen(onAsk = {
+                    startActivity(Intent(this, AskActivity::class.java))
+                })
             }
         }
     }

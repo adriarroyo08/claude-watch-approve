@@ -3,6 +3,8 @@
 
     <uses-feature android:name="android.hardware.type.watch" />
 
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:allowBackup="false"
         android:label="Claude Watch"
@@ -22,6 +24,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ask.AskActivity"
+            android:exported="false"
+            android:label="Preguntar" />
+
         <service
             android:name=".DataLayerListenerService"
             android:exported="true">
@@ -30,6 +37,13 @@
                 <data
                     android:host="*"
                     android:pathPrefix="/claude-approval/request"
+                    android:scheme="wear" />
+                <!-- Sin esto el servicio nunca despierta para /claude-watch/config:
+                     la configuracion que manda el movil no llegaria con la app
+                     del reloj cerrada, y el reloj se quedaria sin URL ni clave. -->
+                <data
+                    android:host="*"
+                    android:pathPrefix="/claude-watch"
                     android:scheme="wear" />
             </intent-filter>
         </service>

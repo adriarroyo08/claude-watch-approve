@@ -7,9 +7,16 @@ Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/claude-watch-approve
 ExecStart=/home/ubuntu/claude-watch-approve/venv/bin/uvicorn server.main:app --host 127.0.0.1 --port 8400
-Environment=CLAUDE_WATCH_API_KEY=IjBMa4QhmTlpZjNLwlksIsjVnSERyXlX6RIs4GnsiNA
+# Los secretos NO van aqui: este fichero esta en git y el repo es publico.
+# Viven en /etc/claude-watch.env (root:root, 600). Ver claude-watch.env.example.
+EnvironmentFile=/etc/claude-watch.env
 Environment=CLAUDE_WATCH_DB_PATH=/home/ubuntu/claude-watch-approve/data/approvals.db
 Environment=CLAUDE_WATCH_FCM_CREDENTIALS=/home/ubuntu/claude-watch-approve/server/firebase-credentials.json
+# CLAUDE_WATCH_CLAUDE_BIN necesita ruta absoluta: el PATH de systemd no
+# incluye ~/.npm-global/bin.
+Environment=CLAUDE_WATCH_ASK_MODEL=sonnet
+Environment=CLAUDE_WATCH_CLAUDE_BIN=/home/ubuntu/.npm-global/bin/claude
+Environment=CLAUDE_WATCH_PROJECTS=watch:/home/ubuntu/claude-watch-approve
 Restart=always
 RestartSec=5
 

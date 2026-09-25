@@ -1,4 +1,11 @@
+import logging
+
 from firebase_admin import messaging
+
+logger = logging.getLogger(__name__)
+
+# FCM rechaza mensajes de mas de 4096 bytes; el resto queda para las claves.
+FULL_TEXT_MAX_BYTES = 3500
 
 _INITIALIZED = False
 
@@ -52,3 +59,40 @@ def send_info_notification(
         messaging.send(msg)
 
     return True
+
+
+def _truncate_utf8(text: str, max_bytes: int) -> str:
+    encoded = text.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return text
+    # "…" ocupa 3 bytes; errors="ignore" descarta un caracter partido.
+    return encoded[: max_bytes - 3].decode("utf-8", errors="ignore") + "…"
+
+
+def send_full_text(tokens: list[str], title: str, text: str) -> int:
+    """Manda una respuesta larga al movil. Devuelve a cuantos llego.
+
+    Solo datos, sin bloque notification: asi la app del movil siempre recibe
+    onMessageReceived y pinta el texto entero, tambien en segundo plano, y el
+    texto no va dos veces contra el limite de 4096 bytes. Un token caducado
+    no corta el envio a los demas.
+    """
+    if not tokens:
+        return 0
+
+    _ensure_init()
+    body = _truncate_utf8(text, FULL_TEXT_MAX_BYTES)
+
+    delivered = 0
+    for token in tokens:
+        msg = messaging.Message(
+            data={"type": "info", "tool_name": title, "message": body},
+            token=token,
+            android=messaging.AndroidConfig(priority="high"),
+        )
+        try:
+            messaging.send(msg)
+            delivered += 1
+        except Exception:
+            logger.exception("No se pudo enviar al token %s...", token[:12])
+    return delivered

@@ -66,6 +66,53 @@ Asi sabes que ya termino y que hizo, sin interrumpir lo que estuvieras haciendo.
 
 ---
 
+## Preguntar desde el reloj
+
+El camino de vuelta: desde el reloj, dictas o escribes una pregunta, el servidor
+ejecuta el CLI `claude` en el proyecto que elijas, y la respuesta vuelve a tu
+muneca.
+
+### El flujo de una pregunta
+
+```
+                    CLAUDE WATCH — PREGUNTAR DESDE EL RELOJ
+
+  +-----------+                       +-----------+
+  |           |    POST /ask          |           |
+  |  Tu reloj | --------------------> | Servidor  |
+  | (WearOS)  | <---- job_id -------  | (nube)    |
+  |           |                       |           |
+  | "pensando"|    GET /ask/{id}      | claude -p |
+  |   ● ● ●   | --------------------> | (subproc) |
+  |           | <---- running ------  |           |
+  |           |      cada 2 s         |           |
+  |           |                       |           |
+  | respuesta | <---- done + texto -  |           |
+  +-----------+                       +-----------+
+```
+
+### Dos modos, y una aprobacion de por medio
+
+- **Lectura** (por defecto) — Claude solo mira: lee archivos y ejecuta
+  `git log`/`git diff`/`git status`. Nunca escribe nada.
+- **Escritura** — Claude primero devuelve un **plan**, sin tocar nada. Tu reloj
+  lo muestra con **Aprobar** / **Cancelar**. Solo si aprueba, el servidor ejecuta
+  el plan y puede modificar archivos. Un plan sin aprobar caduca a los 5 minutos.
+
+La respuesta llega corta, para que quepa en la pantalla del reloj, con un boton
+"Mas" para el texto completo y "Al movil" para mandartela por notificacion push.
+
+### El coste
+
+Cada pregunta gasta tokens reales: medido, desde unos 0,07 USD para una consulta
+trivial hasta unos 0,52 USD para una que lee varios archivos y ejecuta `git`. Por
+eso hay un limite de peticiones por hora — no es una restriccion arbitraria, es lo
+que evita un gasto descontrolado.
+
+Configuracion, claves y detalles tecnicos en [`server/README.md`](server/README.md).
+
+---
+
 ## Que informacion recibes?
 
 Cada vez que Claude termina una sesion de trabajo, recibes:

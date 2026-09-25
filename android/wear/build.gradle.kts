@@ -41,6 +41,9 @@ dependencies {
     // Wearable Data Layer
     implementation(libs.play.services.wearable)
 
+    // Selector del sistema con voz, teclado, escritura a mano y frases guardadas
+    implementation(libs.wear.input)
+
     // Tiles
     implementation(libs.tiles)
     implementation(libs.tiles.material)
@@ -49,4 +52,11 @@ dependencies {
     implementation(libs.coroutines.android)
     implementation(libs.coroutines.play.services)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.10.1")
+
+    // Red y almacenamiento para preguntar a Claude
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.gson)
+    implementation(libs.datastore.preferences)
+    implementation(libs.lifecycle.viewmodel.compose)
+    implementation(libs.lifecycle.runtime.compose)
 }
