@@ -6,6 +6,13 @@ import pytest
 import hook.claude_watch_hook as mod
 
 
+@pytest.fixture(autouse=True)
+def api_key(monkeypatch, tmp_path):
+    """Every test gets a known key and never reads the real key file."""
+    monkeypatch.setenv("CLAUDE_WATCH_API_KEY", "test-key")
+    monkeypatch.setattr(mod, "KEY_FILE", str(tmp_path / "missing"))
+
+
 def invoke_main(input_data: dict, mock_requests):
     """Call mod.main() with patched stdin and capture the SystemExit code."""
     with patch.object(mod, "requests", mock_requests), \
@@ -92,3 +99,36 @@ def test_always_exits_with_code_zero():
 
     code = invoke_main(input_data, mock_requests)
     assert code == 0
+
+
+def test_sends_key_from_env():
+    """The key in CLAUDE_WATCH_API_KEY goes in the X-Api-Key header."""
+    mock_requests = MagicMock()
+
+    invoke_main({"transcript_summary": "x"}, mock_requests)
+
+    assert mock_requests.post.call_args[1]["headers"]["X-Api-Key"] == "test-key"
+
+
+def test_falls_back_to_key_file(monkeypatch, tmp_path):
+    """Without the env var, the key is read from the private key file."""
+    monkeypatch.delenv("CLAUDE_WATCH_API_KEY")
+    key_file = tmp_path / "api-key"
+    key_file.write_text("file-key\n")
+    monkeypatch.setattr(mod, "KEY_FILE", str(key_file))
+    mock_requests = MagicMock()
+
+    invoke_main({"transcript_summary": "x"}, mock_requests)
+
+    assert mock_requests.post.call_args[1]["headers"]["X-Api-Key"] == "file-key"
+
+
+def test_no_key_skips_request(monkeypatch):
+    """With no key anywhere, the hook sends nothing and still exits 0."""
+    monkeypatch.delenv("CLAUDE_WATCH_API_KEY")
+    mock_requests = MagicMock()
+
+    code = invoke_main({"transcript_summary": "x"}, mock_requests)
+
+    assert code == 0
+    mock_requests.post.assert_not_called()
