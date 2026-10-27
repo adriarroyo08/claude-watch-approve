@@ -8,7 +8,21 @@ import sys
 import requests
 
 SERVER_URL = os.environ.get("CLAUDE_WATCH_URL", "http://127.0.0.1:8400")
-API_KEY = os.environ.get("CLAUDE_WATCH_API_KEY", "IjBMa4QhmTlpZjNLwlksIsjVnSERyXlX6RIs4GnsiNA")
+KEY_FILE = os.path.expanduser("~/.config/claude-watch/api-key")
+
+
+def load_api_key() -> str:
+    # The repo is public: the key never lives in code. Env var first, then a
+    # private file (600) so it also works when Claude Code wasn't started
+    # from a shell that sourced ~/.bashrc.
+    key = os.environ.get("CLAUDE_WATCH_API_KEY", "")
+    if key:
+        return key
+    try:
+        with open(KEY_FILE) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
 
 
 def main():
@@ -23,6 +37,10 @@ def main():
         last_message = input_data.get("last_assistant_message", "Tarea completada")
         summary = last_message[:500]
 
+    api_key = load_api_key()
+    if not api_key:
+        sys.exit(0)
+
     try:
         requests.post(
             f"{SERVER_URL}/notify",
@@ -31,7 +49,7 @@ def main():
                 "summary": f"Claude ha terminado ({stop_reason})",
                 "result": summary[:500],
             },
-            headers={"X-Api-Key": API_KEY},
+            headers={"X-Api-Key": api_key},
             timeout=5,
         )
     except Exception:
