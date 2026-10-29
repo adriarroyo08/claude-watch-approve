@@ -122,3 +122,23 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publicar en MyStore (WearOS)
+        continue-on-error: true   # la tienda rechaza (409) un versionCode ya publicado; no rompe la release
+        uses: adriarroyo08/mystore@master
+        with:
+          store-url: https://tienda.automatito.win
+          token: ${{ secrets.MYSTORE_TOKEN }}
+          apk: ${{ steps.apks.outputs.wear_apk }}
+          notes: "Release ${{ steps.tag.outputs.tag }}"
+          keystore-base64: ${{ secrets.MYSTORE_KEYSTORE_B64 }}
+
+      - name: Publicar en MyStore (móvil)
+        continue-on-error: true   # la tienda rechaza (409) un versionCode ya publicado; no rompe la release
+        uses: adriarroyo08/mystore@master
+        with:
+          store-url: https://tienda.automatito.win
+          token: ${{ secrets.MYSTORE_TOKEN }}
+          apk: ${{ steps.apks.outputs.mobile_apk }}
+          notes: "Release ${{ steps.tag.outputs.tag }}"
+          keystore-base64: ${{ secrets.MYSTORE_KEYSTORE_B64 }}
